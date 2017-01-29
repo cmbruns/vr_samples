@@ -18,6 +18,7 @@ class SphericalPanorama(object):
     def __init__(self, image):
         self.image = image
         print (self.image.shape)
+        print (self.image.dtype)
 
     def init_gl(self):
         self.vao = glGenVertexArrays(1)
@@ -32,8 +33,8 @@ class SphericalPanorama(object):
         glTexImage2D(GL_TEXTURE_2D, 
                      0, 
                      GL_RGB8, 
-                     self.image.shape[0], # width 
-                     self.image.shape[1], # height
+                     self.image.shape[1], # width 
+                     self.image.shape[0], # height
                      0,
                      GL_RGB, 
                      GL_UNSIGNED_BYTE, 
@@ -55,10 +56,10 @@ class SphericalPanorama(object):
                     vec4(-1,  1, 0.5, 1));
                 
                 const vec2 TEX_COORD[4] = vec2[4](
-                    vec2(0, 0),
-                    vec2(1, 0),
+                    vec2(0, 1),
                     vec2(1, 1),
-                    vec2(0, 1));
+                    vec2(1, 0),
+                    vec2(0, 0));
                 
                 const int TRIANGLE_STRIP_INDICES[4] = int[4](
                     0, 1, 3, 2);
@@ -84,7 +85,8 @@ class SphericalPanorama(object):
                 void main() 
                 {
                     pixelColor = 
-                            vec4(1, 0, 1, 1);
+                            texture(image, fragTexCoord);
+                            // vec4(1, 0, 1, 1);
                 }
                 """),
                 GL_FRAGMENT_SHADER)
@@ -102,7 +104,7 @@ class SphericalPanorama(object):
     def dispose_gl(self):
         glDeleteTextures([self.texture_handle,])
         glDeleteProgram(self.shader)
-        glDeleteVertexArrays([self.vao,])
+        glDeleteVertexArrays(1, [self.vao,])
 
 
 if __name__ == "__main__":
