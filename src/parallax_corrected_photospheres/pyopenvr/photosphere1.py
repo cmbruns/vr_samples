@@ -14,6 +14,7 @@ import openvr
 from openvr.glframework.glfw_app import GlfwApp
 from openvr.gl_renderer import OpenVrGlRenderer
 
+
 class SphericalPanorama(object):
     def __init__(self, image):
         self.image = image
@@ -46,7 +47,11 @@ class SphericalPanorama(object):
                 #version 450 core
                 #line 44
                 
+                layout(location = 1) uniform mat4 projection = mat4(1);
+                layout(location = 2) uniform mat4 model_view = mat4(1);
+            
                 out vec2 fragTexCoord;
+                out vec3 viewDir;
                 
                 // projected screen quad
                 const vec4 SCREEN_QUAD[4] = vec4[4](
@@ -64,10 +69,15 @@ class SphericalPanorama(object):
                 const int TRIANGLE_STRIP_INDICES[4] = int[4](
                     0, 1, 3, 2);
                 
-                void main() {
+                void main() 
+                {
                     int vertexIndex = TRIANGLE_STRIP_INDICES[gl_VertexID];
                     gl_Position = vec4(SCREEN_QUAD[vertexIndex]);
                     fragTexCoord = vec2(TEX_COORD[vertexIndex]);
+                    mat4 xyzFromNdc = inverse(projection * model_view);
+                    vec4 campos = xyzFromNdc * vec4(0, 0, 0, 1);
+                    vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
+                    viewDir = vpos.xyz/vpos.w - campos.xyz/campos.w;
                 }
                 """),
                 GL_VERTEX_SHADER)
@@ -79,13 +89,23 @@ class SphericalPanorama(object):
                 layout(binding = 0) uniform sampler2D image;
         
                 in vec2 fragTexCoord;
+                in vec3 viewDir;
         
                 out vec4 pixelColor;
                 
+                const float PI = 3.1415926535897932384626433832795;
+                
                 void main() 
                 {
+                    vec3 d = normalize(viewDir);
+                    float longitude = atan(d.y, d.x);
+                    float r = length(d.xy);
+                    float latitude = atan(d.z, r);
+                    
                     pixelColor = 
-                            texture(image, fragTexCoord);
+                            // texture(image, fragTexCoord);
+                            // vec4(0.5 * d + vec3(0.5), 1);
+                            // vec4(0.5 * longitude/PI + 0.5, 0, 0, 1);
                             // vec4(1, 0, 1, 1);
                 }
                 """),
@@ -99,6 +119,8 @@ class SphericalPanorama(object):
         glBindVertexArray(self.vao)
         glBindTexture(GL_TEXTURE_2D, self.texture_handle)
         glUseProgram(self.shader)
+        glUniformMatrix4fv(1, 1, False, projection)
+        glUniformMatrix4fv(2, 1, False, modelview)
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
 
     def dispose_gl(self):
