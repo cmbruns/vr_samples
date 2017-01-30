@@ -1,5 +1,7 @@
 #!/bin/env python
 
+# Example program for viewing a 360 photosphere in a virtual reality headset
+
 import sys
 import os
 from textwrap import dedent
@@ -23,8 +25,6 @@ class SphericalPanorama(object):
         self.image = image
         self.shader = None
         self.vao = None
-        print (self.image.shape)
-        print (self.image.dtype)
 
     def init_gl(self):
         self.vao = glGenVertexArrays(1)
@@ -50,7 +50,7 @@ class SphericalPanorama(object):
         vertex_shader = compileShader(dedent(
                 """\
                 #version 450 core
-                #line 44
+                #line 54
                 
                 layout(location = 1) uniform mat4 projection = mat4(1);
                 layout(location = 2) uniform mat4 model_view = mat4(1);
@@ -81,7 +81,7 @@ class SphericalPanorama(object):
         fragment_shader = compileShader(dedent(
                 """\
                 #version 450 core
-                #line 74
+                #line 85
         
                 layout(binding = 0) uniform sampler2D image;
                 
@@ -99,20 +99,13 @@ class SphericalPanorama(object):
                     float latitude = -atan(d.y, r) / PI + 0.5; // range [0-1]
                     
                     pixelColor = 
-                            // texture(image, fragTexCoord);
                             texture(image, vec2(longitude, latitude));
-                            // vec4(0.5 * d + vec3(0.5), 1);
-                            // vec4(0.5 * longitude/PI + 0.5, 0, 0, 1);
-                            // vec4(1, 0, 1, 1);
                 }
                 """),
                 GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
-        glClearColor(1, 0.9, 0.9, 1.0)
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        #
         glBindVertexArray(self.vao)
         glBindTexture(GL_TEXTURE_2D, self.texture_handle)
         glUseProgram(self.shader)
@@ -135,6 +128,6 @@ if __name__ == "__main__":
     arr = numpy.array(img)
     actor = SphericalPanorama(arr)
     renderer = OpenVrGlRenderer(actor)
-    with GlfwApp(renderer, "glfw OpenVR color cube") as glfwApp:
+    with GlfwApp(renderer, "photosphere test") as glfwApp:
         glfwApp.run_loop()
 
