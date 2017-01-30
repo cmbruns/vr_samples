@@ -5,10 +5,13 @@ import os
 from textwrap import dedent
 
 import numpy
-import Image
 from OpenGL.GL import * # @UnusedWildImport # this comment squelches IDE warnings
 from OpenGL.GL.shaders import compileShader, compileProgram
 import glfw
+try:
+    from PIL import Image
+except:
+    import Image
 
 import openvr
 from openvr.glframework.glfw_app import GlfwApp
@@ -18,6 +21,8 @@ from openvr.gl_renderer import OpenVrGlRenderer
 class SphericalPanorama(object):
     def __init__(self, image):
         self.image = image
+        self.shader = None
+        self.vao = None
         print (self.image.shape)
         print (self.image.dtype)
 
@@ -49,8 +54,7 @@ class SphericalPanorama(object):
                 
                 layout(location = 1) uniform mat4 projection = mat4(1);
                 layout(location = 2) uniform mat4 model_view = mat4(1);
-            
-                out vec2 fragTexCoord;
+
                 out vec3 viewDir;
                 
                 // projected screen quad
@@ -60,12 +64,6 @@ class SphericalPanorama(object):
                     vec4( 1,  1, 0.5, 1),
                     vec4(-1,  1, 0.5, 1));
                 
-                const vec2 TEX_COORD[4] = vec2[4](
-                    vec2(0, 1),
-                    vec2(1, 1),
-                    vec2(1, 0),
-                    vec2(0, 0));
-                
                 const int TRIANGLE_STRIP_INDICES[4] = int[4](
                     0, 1, 3, 2);
                 
@@ -73,7 +71,6 @@ class SphericalPanorama(object):
                 {
                     int vertexIndex = TRIANGLE_STRIP_INDICES[gl_VertexID];
                     gl_Position = vec4(SCREEN_QUAD[vertexIndex]);
-                    fragTexCoord = vec2(TEX_COORD[vertexIndex]);
                     mat4 xyzFromNdc = inverse(projection * model_view);
                     vec4 campos = xyzFromNdc * vec4(0, 0, 0, 1);
                     vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
@@ -87,8 +84,7 @@ class SphericalPanorama(object):
                 #line 74
         
                 layout(binding = 0) uniform sampler2D image;
-        
-                in vec2 fragTexCoord;
+                
                 in vec3 viewDir;
         
                 out vec4 pixelColor;
@@ -97,13 +93,14 @@ class SphericalPanorama(object):
                 
                 void main() 
                 {
-                    vec3 d = normalize(viewDir);
-                    float longitude = atan(d.y, d.x);
-                    float r = length(d.xy);
-                    float latitude = atan(d.z, r);
+                    vec3 d = viewDir;
+                    float longitude = 0.5 * atan(d.z, d.x) / PI + 0.5;
+                    float r = length(d.xz);
+                    float latitude = -atan(d.y, r) / PI + 0.5; // range [0-1]
                     
                     pixelColor = 
                             // texture(image, fragTexCoord);
+                            texture(image, vec2(longitude, latitude));
                             // vec4(0.5 * d + vec3(0.5), 1);
                             // vec4(0.5 * longitude/PI + 0.5, 0, 0, 1);
                             // vec4(1, 0, 1, 1);
@@ -125,7 +122,8 @@ class SphericalPanorama(object):
 
     def dispose_gl(self):
         glDeleteTextures([self.texture_handle,])
-        glDeleteProgram(self.shader)
+        if self.shader is not None:
+            glDeleteProgram(self.shader)
         glDeleteVertexArrays(1, [self.vao,])
 
 
