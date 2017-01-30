@@ -59,10 +59,10 @@ class SphericalPanorama(object):
                 
                 // projected screen quad
                 const vec4 SCREEN_QUAD[4] = vec4[4](
-                    vec4(-1, -1, 0.5, 1),
-                    vec4( 1, -1, 0.5, 1),
-                    vec4( 1,  1, 0.5, 1),
-                    vec4(-1,  1, 0.5, 1));
+                    vec4(-1, -1, 1, 1),
+                    vec4( 1, -1, 1, 1),
+                    vec4( 1,  1, 1, 1),
+                    vec4(-1,  1, 1, 1));
                 
                 const int TRIANGLE_STRIP_INDICES[4] = int[4](
                     0, 1, 3, 2);
@@ -94,7 +94,7 @@ class SphericalPanorama(object):
                 void main() 
                 {
                     vec3 d = viewDir;
-                    float longitude = 0.5 * atan(d.z, d.x) / PI + 0.5;
+                    float longitude = 0.5 * atan(d.z, d.x) / PI + 0.5; // range [0-1]
                     float r = length(d.xz);
                     float latitude = -atan(d.y, r) / PI + 0.5; // range [0-1]
                     
