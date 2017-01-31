@@ -123,7 +123,7 @@ class SphericalPanorama(object):
 if __name__ == "__main__":
     # Open equirectangular photosphere
     src_folder = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(src_folder, '../../../assets/images/_0010782_stitch2.jpg')
+    img_path = os.path.join(src_folder, '../../assets/images/_0010782_stitch2.jpg')
     img = Image.open(img_path)
     arr = numpy.array(img)
     actor = SphericalPanorama(arr)
