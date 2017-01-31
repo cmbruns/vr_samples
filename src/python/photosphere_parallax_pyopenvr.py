@@ -1,6 +1,7 @@
 #!/bin/env python
 
 # Example program for viewing a 360 photosphere in a virtual reality headset
+# using parallax shifting to place the ground plane on the floor
 
 import sys
 import os
@@ -105,23 +106,30 @@ class SphericalPanorama(object):
                     return texture(image, vec2(longitude, latitude));
                 }
 
+                vec3 intersect_plane(vec3 ray_point, vec3 ray_direction, vec4 plane) {
+                    // intersection of view direction and plane
+                    // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
+                    const vec3 w = plane.xyz;
+                    const float e = plane.w;
+                    vec3 l = ray_direction;
+                    vec3 m = cross(ray_point, l);
+                    // r is the point on the floor we are looking at
+                    vec3 r = (cross(w, m) - e*l) / dot(w,l);
+                    return r;
+                }
+                
+                // intersect_proxy_geometry() will change depending on nature of proxy geometry
+                vec3 intersect_proxy_geometry(vec3 ray_point, vec3 ray_direction) 
+                {
+                    return intersect_plane(ray_point, ray_direction, ground_plane);
+                }
+                
                 vec4 color_for_direction(in vec3 d) {
                     if (d.y < 0) {
                         // below the horizon, shift parallax to infinite plane at finite distance
-                        // TODO: parallax offset
-                        
-                        // intersection of view direction and plane
-                        // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
-                        const vec3 w = ground_plane.xyz;
-                        const float e = ground_plane.w;
-                        vec3 l = viewDir;
-                        vec3 m = cross(camPos, l);
-                        // r is the point on the floor we are looking at
-                        vec3 r = (cross(w, m) - e*l) / dot(w,l);
+                        vec3 r = intersect_proxy_geometry(camPos, viewDir);
                         vec3 dir2 = r - original_cam_pos;
-
                         return color_for_original_direction(dir2);
-                        // return vec4(0, 1, 0, 1);
                     }
                     else {
                         // above the horizon, view to infinity in all directions
@@ -138,7 +146,6 @@ class SphericalPanorama(object):
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
-        sys.stdout.flush()
         glBindVertexArray(self.vao)
         glBindTexture(GL_TEXTURE_2D, self.texture_handle)
         glUseProgram(self.shader)
@@ -161,6 +168,6 @@ if __name__ == "__main__":
     arr = numpy.array(img)
     actor = SphericalPanorama(arr)
     renderer = OpenVrGlRenderer(actor)
-    with GlfwApp(renderer, "photosphere test") as glfwApp:
+    with GlfwApp(renderer, "parallax shifted photosphere test") as glfwApp:
         glfwApp.run_loop()
 
