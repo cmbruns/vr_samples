@@ -87,7 +87,8 @@ class SphericalPanorama(object):
                 #line 85
                 
                 const vec3 original_cam_pos = vec3(0, 2.0, 0);
-                const vec4 ground_plane = vec4(0, 1, 0, 0);
+                const float floor_level = -0.40;
+                const vec4 ground_plane = vec4(0, 1, 0, -floor_level);
         
                 layout(binding = 0) uniform sampler2D image;
                 
