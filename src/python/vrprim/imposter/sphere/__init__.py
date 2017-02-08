@@ -8,6 +8,9 @@ import textwrap
 import inspect
 
 from OpenGL import GL
+from OpenGL.GL.shaders import compileShader, compileProgram
+from OpenGL.arrays.vbo import VBO
+import numpy
 
 class SphereProgram(object):
     '''
@@ -39,9 +42,23 @@ class SphereProgram(object):
         solid core clipping
             padded clip slab plus final fragment clipping
        '''
-    def __init__(self, glsl_version='450 core', default_radius=1.0):
+    def __init__(self, glsl_version='450 core', default_radius=2.0):
         self.glsl_version = glsl_version
         self.default_radius = default_radius
+        self.sphere_center_location = 1
+        
+    def init_gl(self):
+        vertex_shader = compileShader(self.get_vertex_shader(), GL.GL_VERTEX_SHADER)
+        geometry_shader = compileShader(self.get_geometry_shader(), GL.GL_GEOMETRY_SHADER)
+        fragment_shader = compileShader(self.get_fragment_shader(), GL.GL_FRAGMENT_SHADER)
+        self.program_handle = compileProgram(vertex_shader, geometry_shader, fragment_shader)
+    
+    def load(self):
+        GL.glUseProgram(self.program_handle)
+    
+    def dispose_gl(self):
+        GL.glDeleteProgram(self.program_handle)
+        self.program_handle = None
         
     def get_vertex_shader(self):
         '''
@@ -55,13 +72,13 @@ class SphereProgram(object):
         >>> print('\\n'.join(v[2:]))
         // Vertex shader for sphere imposters
         layout(location = 1) uniform mat4 view_matrix = mat4(1);
-        layout(location = 1) in vec3 sphere_center;
+        layout(location = %s) in vec3 sphere_center;
         void main() 
         {
             // NOTE: projection is deferred to the geometry shader
             gl_Position = view_matrix * vec4(sphere_center, 1);
         }                
-        '''
+        ''' % (self.sphere_center_location)
         framerecord = inspect.stack()[0] # cache this line number, to improve shader error messages
         vertex_shader = textwrap.dedent(
                 '''\
@@ -88,6 +105,20 @@ class SphereProgram(object):
                 // Geometry shader for sphere imposters
                 layout(points) in;
                 layout(triangle_strip, max_vertices=10) out; // viewer-facing half-cube imposter geometry
+
+                const float sz = 1;
+                const float r = sz;
+                const float l = -sz;
+                const float t = sz;
+                const float b = -sz;
+                const float n = 1;
+                const float f = 5;
+                uniform mat4 projectionMatrix = mat4( // mat4(1);
+                        2/(r-l), 0, 0, -(r+l)/(r-l),
+                        0, 2/(t-b), 0, -(t+b)/(t-b),
+                        0, 0, -2/(f-n), -(f+n)/(f-n),
+                        0, 0, 0, 1);
+                
                 const float radius = %s;
                 // Spatially linear parameters can be computed per-vertex, and correctly interpolated per-fragment,
                 // to help efficiently solve the quadratic ray-casting formula for this sphere.
@@ -158,7 +189,7 @@ class SphereProgram(object):
                 {
                     vec4 posIn = gl_in[0].gl_Position;
                     linpar.c = posIn.xyz/posIn.w; // sphere center is constant for all vertices
-                    linpar.c2 = dot(center, center) - radius*radius; // 2*c coefficient is constant for all vertices
+                    linpar.c2 = dot(linpar.c, linpar.c) - radius*radius; // 2*c coefficient is constant for all vertices
                     // Use BACK faces for imposter geometry, just in case the viewpoint
                     // is inside the sphere bounding box
                     // imposter behind sphere (10 vertices)
@@ -198,7 +229,7 @@ class SphereProgram(object):
                     float c2; // cee squared - constant
                     float pc; // pos dot center - linear
                 } linpar;
-                const vec4 sphere_color = vec4(0, 0, 1, 1); // default to blue
+                const vec4 sphere_color = vec4(0, 1, 0, 1); // default to blue
                 out vec4 frag_color;
                 void main() 
                 {
@@ -215,10 +246,35 @@ class SphereActor(object):
     High-performance display actor for large numbers of spheres
     '''
 
-    def __init__(self, params):
-        '''
-        Constructor
-        '''
+    def __init__(self, vbos=None):
+        self.shader = SphereProgram()
+        if vbos is None:
+            # Create on vertex buffer object
+            self.vbos = [VBO(numpy.array([0,0,-3], 'f')),]
+    
+    def init_gl(self):
+        self.shader.init_gl()
+        self.vao = GL.glGenVertexArrays(1)
+        for vbo in self.vbos:
+            pass
+        
+    def display_gl(self, viewpoint):
+        GL.glBindVertexArray(self.vao)
+        self.shader.load()
+        for vbo in self.vbos:
+            vbo.bind()
+            xyzloc = self.shader.sphere_center_location
+            GL.glEnableVertexAttribArray(xyzloc)
+            GL.glVertexAttribPointer(xyzloc, 3, GL.GL_FLOAT, False, 0, 0)
+            GL.glDrawArrays(GL.GL_POINTS, 0, 1);
+        # TODO:
+    
+    def dispose_gl(self):
+        self.shader.dispose_gl()
+        for vbo in self.vbos:
+            vbo.delete()
+        self.vbos = []
+
 
 class ShaderGenerator(object):
     def __init__(self, steps):
