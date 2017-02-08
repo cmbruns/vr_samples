@@ -7,6 +7,8 @@ Created on Feb 7, 2017
 import textwrap
 import inspect
 
+from OpenGL import GL
+
 class SphereProgram(object):
     '''
     Possible future adjustable options include:
@@ -77,31 +79,6 @@ class SphereProgram(object):
                         framerecord.lineno+5))
         return vertex_shader
     
-    def get_fragment_shader(self):
-        framerecord = inspect.stack()[0] # cache this line number, to improve shader error messages
-        fragment_shader = textwrap.dedent(
-                '''\
-                #version %s
-                #line %s
-                // Fragment shader for sphere imposters
-                in LinearParameters
-                {
-                    vec3 c; // sphere center - constant
-                    vec3 p; // imposter position - linear
-                    float c2; // cee squared - constant
-                    float pc; // pos dot center - linear
-                } linpar;
-                const vec4 sphere_color = vec4(0, 0, 1, 1); // default to blue
-                out vec4 frag_color;
-                void main() 
-                {
-                    // TODO: cull missed rays
-                    frag_color = sphere_color; // flat shading
-                }\
-                ''' % (self.glsl_version, 
-                        framerecord.lineno+5))
-        return fragment_shader
-
     def get_geometry_shader(self):
         framerecord = inspect.stack()[0] # cache this line number, to improve shader error messages
         geometry_shader = textwrap.dedent(
@@ -207,6 +184,31 @@ class SphereProgram(object):
                         self.default_radius))
         return geometry_shader
 
+    def get_fragment_shader(self):
+        framerecord = inspect.stack()[0] # cache this line number, to improve shader error messages
+        fragment_shader = textwrap.dedent(
+                '''\
+                #version %s
+                #line %s
+                // Fragment shader for sphere imposters
+                in LinearParameters
+                {
+                    vec3 c; // sphere center - constant
+                    vec3 p; // imposter position - linear
+                    float c2; // cee squared - constant
+                    float pc; // pos dot center - linear
+                } linpar;
+                const vec4 sphere_color = vec4(0, 0, 1, 1); // default to blue
+                out vec4 frag_color;
+                void main() 
+                {
+                    // TODO: cull missed rays
+                    frag_color = sphere_color; // flat shading
+                }\
+                ''' % (self.glsl_version, 
+                        framerecord.lineno+5))
+        return fragment_shader
+
 
 class SphereActor(object):
     '''
@@ -218,7 +220,107 @@ class SphereActor(object):
         Constructor
         '''
 
+class ShaderGenerator(object):
+    def __init__(self, steps):
+        self.steps = steps
+
+
+class ShaderStep(object):
+    def __init__(self, shader_type=GL.GL_VERTEX_SHADER, glsl_version="450 core"):
+        self.shader_type = shader_type
+        self.outputs = []
+        self.consts = []
+        self.inputs = None
+        self.glsl_version = glsl_version
+        self.main = None
+    
+    # These methods are intended to resemble statements in shader code
+    def const(self, type_, name, value):
+        self.consts.append([type_, name, value,])
+        
+    def in_(self, inputs):
+        self.inputs = inputs
+
+    def out(self, type_, name):
+        self.outputs.append([type_, name],)
+
+    def _const_string(self):
+        result = ""
+        if self.consts is None:
+            return result
+        for i in self.consts:
+            result += 'const %s %s = %s;\n' % (i[0], i[1], i[2])
+        if len(self.consts) > 0:
+            result += '\n'
+        return result        
+
+    def _header_string(self):
+        return textwrap.dedent('''\
+        #version %s
+        
+        ''' % self.glsl_version)
+        
+    def _input_string(self):
+        result = ""
+        if self.inputs is None:
+            return result
+        for i in self.inputs:
+            result += 'in %s %s;\n' % (i[0], i[1])
+        if len(self.inputs) > 0:
+            result += '\n'
+        return result
+        
+    def _main_string(self):
+        return textwrap.dedent(self.main)
+        
+    def _output_string(self):
+        result = ""
+        for i in self.outputs:
+            result += 'out %s %s;\n' % (i[0], i[1])
+        if len(self.outputs) > 0:
+            result += '\n'
+        return result
+        
+    def __str__(self):
+        "Generate shader program source code string"
+        source = ""
+        source += self._header_string()
+        source += self._input_string()
+        source += self._output_string()
+        source += self._const_string()
+        source += self._main_string()
+        return source
+
+
+def test_flow():
+    "shader generator proof of concept"
+    glsl_version = "450 core"
+    vs = ShaderStep(GL.GL_VERTEX_SHADER, glsl_version)
+    
+    gs = ShaderStep(GL.GL_GEOMETRY_SHADER, glsl_version)
+    gs.out("vec3", "sphere_center")
+    gs.out("vec3", "imposter_pos")
+    gs.out("float", "c2")
+    gs.out("float", "pc")
+    
+    fs = ShaderStep(GL.GL_FRAGMENT_SHADER, glsl_version)
+    fs.in_(gs.outputs)
+    fs.out("vec4", "frag_color")
+    fs.const("vec4", "sphere_color", "vec4(0, 0, 1, 1)")
+    fs.main = '''\
+            // Fragment shader for sphere imposters
+            void main() 
+            {
+                // TODO: cull missed rays
+                frag_color = sphere_color; // flat shading
+            }\
+        '''
+
+    sg = ShaderGenerator([vs, gs, fs],)
+    print( str(fs) )
 
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
+    test_flow()
+
