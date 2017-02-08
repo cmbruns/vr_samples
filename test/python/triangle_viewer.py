@@ -9,6 +9,7 @@ import glfw
 class TriangleViewer(object):
     def __init__(self):
         self.size = (640, 480)
+        self.is_dragging = False
     
     def __enter__(self):
         if not glfw.init():
@@ -21,6 +22,8 @@ class TriangleViewer(object):
             glfw.terminate()
             raise Exception("GLFW window creation error")
         glfw.set_key_callback(self.window, self.key_callback)
+        glfw.set_cursor_pos_callback(self.window, self.mouse_pos_callback)
+        glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
         glfw.make_context_current(self.window)
         self.vao = GL.glGenVertexArrays(1)
         GL.glBindVertexArray(self.vao)
@@ -62,6 +65,23 @@ class TriangleViewer(object):
         "press ESCAPE to quit the application"
         if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
             glfw.set_window_should_close(window, True)
+    
+    def mouse_pos_callback(self, window, xpos, ypos):
+        if not self.is_dragging:
+            return
+        dx = xpos - self.mouse_pos[0]
+        dy = ypos - self.mouse_pos[1]
+        self.mouse_pos = (xpos, ypos)
+        # print(dx, dy)
+    
+    def mouse_button_callback(self, window, button, action, mods):
+        if button != glfw.MOUSE_BUTTON_LEFT:
+            return
+        if action == glfw.PRESS:
+            self.is_dragging = True
+            self.mouse_pos = glfw.get_cursor_pos(self.window)
+        elif action == glfw.RELEASE:
+            self.is_dragging = False
         
     def render_scene(self):
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
