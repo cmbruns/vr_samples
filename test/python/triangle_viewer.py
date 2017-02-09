@@ -6,9 +6,58 @@ from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays.vbo import VBO
 import glfw
 
+
+class CameraState(object):
+    def __init__(self):
+        # Common values for both orthographic and perspective projection
+        self.focus = [0.0, 0.0, 0.0] # center of view, center of rotation
+        self.scene_units_per_viewport_height = 2.0 # at the focus, at least
+        self.viewport_size = [640, 480]
+        self.is_perspective = False # perspective or orthographic?
+        self.rotation = numpy.identity(3)
+        self.view_distance_pixels = 2000
+        self.z_near_relative = 0.5 # range [0,1]
+        self.z_far_relative = 3.0 # range [1,infinity)
+    
+    def get_projection(self):
+        "homogeneous projection matrix encapsulates scale, aspect, and projection"
+        if self.is_perspective:
+            w, h = self.viewport_size
+            vdist_scene_units = self.scene_units_per_viewport_height * self.view_distance_pixels / h
+            n = self.z_near_relative * vdist_scene_units
+            f = self.z_far_relative * vdist_scene_units
+            t = self.z_near_relative * self.scene_units_per_viewport_height / 2
+            b = -t
+            aspect = w/float(h)            
+            r = aspect * t # frustum right
+            l = -r # frustum left
+            result = numpy.array( # TODO: maybe the transpose of this, instead?
+                    [[2.0*n/(r-l), 0.0, 0.0, 0.0],
+                    [0.0, 2.0*n/(t-b), 0.0, 0.0],
+                    [(r+l)/(r-l), (t+b)/(t-b), -(f+n)/(f-n), -1.0],
+                    [0.0, 0.0, -2.0*f*n/(f-n), 0.0]], 'f')
+            return result
+        else: # orthographic
+            scale = self.scene_units_per_viewport_height / 2
+            n = self.z_near_relative * scale # frustum near
+            f = self.z_far_relative * scale # frustum far
+            t = scale # frustum top
+            b = -t # frustum bottom
+            w, h = self.viewport_size
+            aspect = w/float(h)
+            r = aspect * t # frustum right
+            l = -r # frustum left
+            result = numpy.array(
+                    [[2.0/(r-l), 0.0, 0.0, 0.0],
+                    [0.0, 2.0/(t-b), 0.0, 0.0],
+                    [0.0, 0.0, -2.0/(f-n), 0.0],
+                    [-(r+l)/(r-l), -(t+b)/(t-b), -(f+n)/(f-n), 1.0]], 'f')
+            return result
+        
+
 class TriangleViewer(object):
     def __init__(self):
-        self.size = (640, 480)
+        self.camera = CameraState()
         self.is_dragging = False
     
     def __enter__(self):
@@ -17,13 +66,17 @@ class TriangleViewer(object):
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 5)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-        self.window = glfw.create_window(self.size[0], self.size[1], "Little test window", None, None)
+        w, h = self.camera.viewport_size
+        self.window = glfw.create_window(w, h, "Little test window", None, None)
         if self.window is None:
             glfw.terminate()
             raise Exception("GLFW window creation error")
+        #
         glfw.set_key_callback(self.window, self.key_callback)
         glfw.set_cursor_pos_callback(self.window, self.mouse_pos_callback)
         glfw.set_mouse_button_callback(self.window, self.mouse_button_callback)
+        glfw.set_framebuffer_size_callback(self.window, self.resize_callback)
+        #
         glfw.make_context_current(self.window)
         self.vao = GL.glGenVertexArrays(1)
         GL.glBindVertexArray(self.vao)
@@ -33,8 +86,9 @@ class TriangleViewer(object):
                     #version 450 core
                     layout(location = 1) in vec3 pos;
                     layout(location = 1) uniform mat4 view_matrix = mat4(1);
+                    layout(location = 2) uniform mat4 projection_matrix = mat4(1);
                     void main() {
-                        gl_Position = view_matrix * vec4(pos, 1);
+                        gl_Position = projection_matrix * view_matrix * vec4(pos, 1);
                     }
                     '''), GL.GL_VERTEX_SHADER),
                 compileShader(textwrap.dedent('''\
@@ -45,10 +99,11 @@ class TriangleViewer(object):
                     }
                     '''), GL.GL_FRAGMENT_SHADER))
         GL.glUseProgram(self.program)
+        z = -1.0
         self.vbo = VBO(numpy.array([
-                [0.0, 0.0, 0],
-                [0.2, 0.0, 0],
-                [0.0, 0.5, 0]], 'f'))
+                [0.0, 0.0, z],
+                [0.2, 0.0, z],
+                [0.0, 0.5, z]], 'f'))
         self.vbo.bind()
         GL.glEnableVertexAttribArray(1)
         GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False, 0, None)
@@ -61,6 +116,10 @@ class TriangleViewer(object):
         GL.glDeleteVertexArrays(1, [self.vao,])
         glfw.terminate()
 
+    def resize_callback(self, window, w, h):
+        self.camera.viewport_size[0] = w
+        self.camera.viewport_size[1] = h
+        
     def key_callback(self, window, key, scancode, action, mods):
         "press ESCAPE to quit the application"
         if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
@@ -84,6 +143,9 @@ class TriangleViewer(object):
             self.is_dragging = False
         
     def render_scene(self):
+        w,h = self.camera.viewport_size
+        GL.glViewport(0, 0, w, h)
+        GL.glUniformMatrix4fv(2, 1, False, self.camera.get_projection())
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3);
         glfw.swap_buffers(self.window)
