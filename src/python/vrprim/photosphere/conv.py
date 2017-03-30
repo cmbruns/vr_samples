@@ -146,9 +146,18 @@ class Converter(object):
             void main() {
                 vec3 xyz = xyz_from_cube(tex_coord);
                 vec2 eq = equirect_from_xyz(xyz);
+
+                // Use explicit level of detail to avoid seam at z==1, lon==PI
+                // Use explicit gradients, to preseve anisotropic filtering during mipmap lookup
+                // todo:
+                vec2 dpdx = dFdx(eq);
+                if (dpdx.x > 0.5) dpdx.x -= 1;
+                if (dpdx.x < -0.5) dpdx.x += 1;
+                vec2 dpdy = dFdy(eq);
+                frag_color = 50 * textureGrad(equirect, eq, dpdx, dpdy);
+
                 // frag_color = vec4(eq, 0.5, 1);
                 // frag_color = vec4(xyz, 1);
-                frag_color = 50 * texture(equirect, eq);
                 // frag_color = vec4(tex_coord, 1, 1);
                 // frag_color = vec4(xyz_from_equirect(tex_coord), 1);
             }
@@ -216,14 +225,14 @@ def main():
     pct_high = 100
     val_low, val_high = numpy.percentile(arr[numpy.nonzero(arr)], [pct_low, pct_high])
     dynamic_range = val_high / val_low
-    eps = 1e-2
+    eps = 0.07
     while dynamic_range > 65535:
         pct_low = eps
         pct_high = 100.0 - eps
         val_low, val_high = numpy.percentile(arr[numpy.nonzero(arr)], [pct_low, pct_high])
         dynamic_range = val_high / val_low
         print(pct_low, pct_high, val_low, val_high, dynamic_range)
-        eps *= 1.5
+        eps *= 1.2
     arr *= 65535.0 / val_high
     arr[arr>65535] = 65535
     arr[arr<0] = 0
