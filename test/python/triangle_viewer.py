@@ -13,7 +13,7 @@ class CameraState(object):
         self.focus = [0.0, 0.0, 0.0] # center of view, center of rotation
         self.scene_units_per_viewport_height = 2.0 # at the focus, at least
         self.viewport_size = [640, 480]
-        self.is_perspective = False # perspective or orthographic?
+        self.is_perspective = True # perspective or orthographic?
         self.rotation = numpy.identity(3)
         self.view_distance_pixels = 2000
         self.z_near_relative = 0.5 # range [0,1]

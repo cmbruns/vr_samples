@@ -26,6 +26,7 @@ class SphericalPanorama(object):
         self.image = image
         self.shader = None
         self.vao = None
+        self.texture_handle = None
 
     def init_gl(self):
         self.vao = glGenVertexArrays(1)

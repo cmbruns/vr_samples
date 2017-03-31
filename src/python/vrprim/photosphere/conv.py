@@ -30,8 +30,9 @@ class Converter(object):
         ew = arr.shape[1]
         print(ew, eh)
         # Cubemap has same width, and height *  1.5, right? todo:
-        scale = 4.0 / math.pi # so cube face center resolution matches equirectangular equator resolution
-        scale *= 1.0 / 8.0 # smaller for faster testing
+        # scale = 4.0 / math.pi # so cube face center resolution matches equirectangular equator resolution
+        scale = 1.0
+        # scale *= 1.0 / 8.0 # smaller for faster testing
         cw = int(scale * ew)
         ch = int(scale * eh * 1.50)
         print(cw, ch)
@@ -57,7 +58,7 @@ class Converter(object):
             print("Framebuffer OK")
         # Create shader program
         vtx = shaders.compileShader("""#version 450
-            #line 61
+            #line 62
 
             out vec2 tex_coord;
 
@@ -74,7 +75,7 @@ class Converter(object):
             }
             """, GL.GL_VERTEX_SHADER)
         frg = shaders.compileShader("""#version 450
-            #line 78
+            #line 79
 
             layout(binding=0) uniform sampler2D equirect;
 
@@ -149,9 +150,8 @@ class Converter(object):
 
                 // Use explicit level of detail to avoid seam at z==1, lon==PI
                 // Use explicit gradients, to preseve anisotropic filtering during mipmap lookup
-                // todo:
                 vec2 dpdx = dFdx(eq);
-                if (dpdx.x > 0.5) dpdx.x -= 1;
+                if (dpdx.x > 0.5) dpdx.x -= 1; // use "repeat" wrapping on gradient
                 if (dpdx.x < -0.5) dpdx.x += 1;
                 vec2 dpdy = dFdy(eq);
                 frag_color = 50 * textureGrad(equirect, eq, dpdx, dpdy);
