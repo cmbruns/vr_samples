@@ -3,20 +3,17 @@
 # Example program for viewing a 360 photosphere in a virtual reality headset
 # using parallax shifting to place the ground plane on the floor
 
-import sys
 import os
 from textwrap import dedent
 
 import numpy
-from OpenGL.GL import * # @UnusedWildImport # this comment squelches IDE warnings
+from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
-import glfw
 try:
     from PIL import Image
-except:
+except ImportError:
     import Image
 
-import openvr
 from openvr.glframework.glfw_app import GlfwApp
 from openvr.gl_renderer import OpenVrGlRenderer
 
@@ -29,30 +26,29 @@ class SphericalPanorama(object):
         self.texture_handle = None
 
     def init_gl(self):
-        self.vao = glGenVertexArrays(1)
-        glBindVertexArray(self.vao)
+        self.vao = GL.glGenVertexArrays(1)
+        GL.glBindVertexArray(self.vao)
         # Set up photosphere image texture for OpenGL
-        self.texture_handle = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.texture_handle);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 
+        self.texture_handle = GL.glGenTextures(1)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, self.texture_handle);
+        GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+        GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR);
+        GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT);
+        GL.glTexParameterf(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_MIRRORED_REPEAT);
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 
                      0, 
-                     GL_RGB8, 
+                     GL.GL_RGB8, 
                      self.image.shape[1], # width 
                      self.image.shape[0], # height
                      0,
-                     GL_RGB, 
-                     GL_UNSIGNED_BYTE, 
+                     GL.GL_RGB, 
+                     GL.GL_UNSIGNED_BYTE, 
                      self.image);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        GL.glBindTexture(GL.GL_TEXTURE_2D, 0);
         # Set up shaders for rendering
         vertex_shader = compileShader(dedent(
-                """\
-                #version 450 core
-                #line 54
+                """#version 450 core
+                #line 52
                 
                 layout(location = 1) uniform mat4 projection = mat4(1);
                 layout(location = 2) uniform mat4 model_view = mat4(1);
@@ -81,11 +77,10 @@ class SphericalPanorama(object):
                     viewDir = vpos.xyz/vpos.w - camPos;
                 }
                 """),
-                GL_VERTEX_SHADER)
+                GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(dedent(
-                """\
-                #version 450 core
-                #line 85
+                """#version 450 core
+                #line 84
                 
                 const vec3 original_cam_pos = vec3(0, 2.0, 0);
                 const float floor_level = -0.40;
@@ -144,22 +139,22 @@ class SphericalPanorama(object):
                     pixelColor = color_for_direction(viewDir);
                 }
                 """),
-                GL_FRAGMENT_SHADER)
+                GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
-        glBindVertexArray(self.vao)
-        glBindTexture(GL_TEXTURE_2D, self.texture_handle)
-        glUseProgram(self.shader)
-        glUniformMatrix4fv(1, 1, False, projection)
-        glUniformMatrix4fv(2, 1, False, modelview)
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+        GL.glBindVertexArray(self.vao)
+        GL.glBindTexture(GL.GL_TEXTURE_2D, self.texture_handle)
+        GL.glUseProgram(self.shader)
+        GL.glUniformMatrix4fv(1, 1, False, projection)
+        GL.glUniformMatrix4fv(2, 1, False, modelview)
+        GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
 
     def dispose_gl(self):
-        glDeleteTextures([self.texture_handle,])
+        GL.glDeleteTextures([self.texture_handle,])
         if self.shader is not None:
-            glDeleteProgram(self.shader)
-        glDeleteVertexArrays(1, [self.vao,])
+            GL.glDeleteProgram(self.shader)
+        GL.glDeleteVertexArrays(1, [self.vao,])
 
 
 if __name__ == "__main__":
