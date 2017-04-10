@@ -11,13 +11,9 @@ class PanoramaRaster(object):
         self.texture_unit = texture_unit
         self.target = GL.GL_TEXTURE_2D
 
-    def init_gl(self):
-        self.texture_handle = GL.glGenTextures(1)
-        GL.glBindTexture(self.target, self.texture_handle)
-        GL.glTexParameterf(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
-        GL.glTexParameterf(self.target, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR_MIPMAP_LINEAR)
-        GL.glTexParameterf(self.target, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT)
-        GL.glTexParameterf(self.target, GL.GL_TEXTURE_WRAP_T, GL.GL_MIRRORED_REPEAT)
+    def _upload_texture(self):
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_T, GL.GL_MIRRORED_REPEAT)
         aniso = GL.glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT)
         GL.glTexParameterf(GL.GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso)
         GL.glTexImage2D(self.target, 
@@ -28,7 +24,14 @@ class PanoramaRaster(object):
                      0,
                      GL.GL_RGB, 
                      GL.GL_UNSIGNED_BYTE, 
-                     self.image)
+                     self.image)        
+
+    def init_gl(self):
+        self.texture_handle = GL.glGenTextures(1)
+        GL.glBindTexture(self.target, self.texture_handle)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR_MIPMAP_LINEAR)
+        self._upload_texture()
         GL.glGenerateMipmap(self.target)
         GL.glBindTexture(self.target, 0)
         
@@ -41,12 +44,12 @@ class PanoramaRaster(object):
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return """
-            #line 42
+            #line 45
             layout(binding = %d) uniform sampler2D equirectangular_image;
             
             vec4 color_for_direction(in vec3 d) {
                 const float PI = 3.1415926535897932384626433832795;
-                float longitude = 0.5 * atan(d.z, d.x) / PI + 0.5; // range [0-1]
+                float longitude = 0.5 * atan(d.x, -d.z) / PI + 0.5; // range [0-1]
                 float r = length(d.xz);
                 float latitude = -atan(d.y, r) / PI + 0.5; // range [0-1]
                 vec2 tex_coord = vec2(longitude, latitude);
@@ -73,7 +76,68 @@ class EquirectangularRaster(PanoramaRaster):
     
 
 class CubeMapRaster(PanoramaRaster):
-    pass
+    def __init__(self, img_array, texture_unit=0):
+        super(CubeMapRaster, self).__init__(img_array, texture_unit)
+        # Verify 4:3 aspect ratio
+        shp = self.image.shape
+        tile = shp[0] / 3
+        assert(shp[0] == 3 * tile)
+        assert(shp[1] == 4 * tile)
+        self.target = GL.GL_TEXTURE_CUBE_MAP
+        
+    def init_gl(self):
+        super(CubeMapRaster, self).init_gl()
+        GL.glEnable(GL.GL_TEXTURE_CUBE_MAP_SEAMLESS)
+
+    def _upload_texture(self):
+        # Always use GL_CLAMP_TO_EDGE with cubemaps
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_R, GL.GL_CLAMP_TO_EDGE)
+        sz = int(self.image.shape[0] / 3)
+        # Extract faces from combined cubemap image
+        # a[::, ::-1] flips image array "a" left-right
+        face_left = numpy.array(self.image[sz:sz*2, sz*0:sz*1][::, ::-1])
+        face_front = numpy.array(self.image[sz:sz*2, sz*1:sz*2][::, ::-1])
+        face_right = numpy.array(self.image[sz:sz*2, sz*2:sz*3][::, ::-1])
+        face_rear = numpy.array(self.image[sz:sz*2, sz*3:sz*4][::, ::-1])
+        face_top = numpy.array(self.image[sz*0:sz*1, sz*1:sz*2][::-1, ::])
+        face_nadir = numpy.array(self.image[sz*2:sz*3, sz*1:sz*2][::-1, ::])
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_X, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_right)
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_top)
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_rear)
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_left)
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_nadir)
+        GL.glTexImage2D(
+                GL.GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 
+                0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
+                face_front)
+     
+    def shader_fragment(self):
+        "fragment of fragment-shader preamble needed to access pixels from this photosphere"
+        return """
+            #line 92
+            layout(binding = %d) uniform samplerCube cubemap_image;
+            
+            vec4 color_for_direction(in vec3 d) {
+                return texture(cubemap_image, d);
+            }
+        """ % (self.texture_unit)
 
 
 class InfiniteBackground(object):
@@ -84,7 +148,7 @@ class InfiniteBackground(object):
         # Set up shaders for rendering
         vertex_shader = compileShader(
             """#version 450 core
-            #line 71
+            #line 95
             
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
@@ -114,12 +178,12 @@ class InfiniteBackground(object):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 102
+            #line 125
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
             %s // raster implementation gets inserted here...
-            #line 106
+            #line 130
             
             in vec3 viewDir;
             out vec4 pixelColor;
@@ -133,6 +197,7 @@ class InfiniteBackground(object):
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
+        # print(modelview)
         GL.glUseProgram(self.shader)
         GL.glUniformMatrix4fv(1, 1, False, projection)
         GL.glUniformMatrix4fv(2, 1, False, modelview)
@@ -175,8 +240,12 @@ if __name__ == "__main__":
     from openvr.gl_renderer import OpenVrGlRenderer
 
     src_folder = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(src_folder, '../../../../assets/images/_0010782_stitch2.jpg')
-    raster = EquirectangularRaster(img_path)
+    if True:
+        img_path = os.path.join(src_folder, '../../../../assets/images/_0010782_stitch2.jpg')
+        raster = EquirectangularRaster(img_path)
+    else:
+        img_path = os.path.join(src_folder, '../../../../assets/images/lauterbrunnen_cube.jpg')
+        raster = CubeMapRaster(img_path)
     actor = SphericalPanorama(raster)
     renderer = OpenVrGlRenderer(actor)
     with GlfwApp(renderer, "photosphere test") as glfwApp:

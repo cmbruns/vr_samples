@@ -11,6 +11,8 @@ import glfw
 from OpenGL import GL
 from OpenGL.GL import shaders
 from OpenGL.GL.EXT.texture_filter_anisotropic import GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GL_TEXTURE_MAX_ANISOTROPY_EXT
+from PIL import Image
+
 
 class Converter(object):
     def render_scene(self):
@@ -32,7 +34,7 @@ class Converter(object):
         # Cubemap has same width, and height *  1.5, right? todo:
         scale = 4.0 / pi # tan(a)/a [a == 45 degrees] # so cube face center resolution matches equirectangular equator resolution
         # scale = 1.0
-        scale *= 1.0 / 4.0 # optional: smaller for faster testing
+        # scale *= 1.0 / 4.0 # optional: smaller for faster testing
         tile_size = int(scale * ew / 4.0)
         # optional: clip to nearest power of two subtile size
         tile_size = int(pow(2.0, int(log2(tile_size))))
@@ -52,8 +54,18 @@ class Converter(object):
         fb = GL.glGenFramebuffers(1)
         GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, fb)
         cube_color_tex = GL.glGenTextures(1)
+        if arr.dtype == numpy.uint16:
+            gl_type = GL.GL_UNSIGNED_SHORT
+            cube_internal_format = GL.GL_RGBA16
+            input_internal_format = GL.GL_RGB16
+        elif arr.dtype == numpy.uint8:
+            gl_type = GL.GL_UNSIGNED_BYTE
+            cube_internal_format = GL.GL_RGBA8
+            input_internal_format = GL.GL_RGB8
+        else:
+            raise
         GL.glBindTexture(GL.GL_TEXTURE_2D, cube_color_tex)
-        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGBA16, cw, ch, 0, GL.GL_RGBA, GL.GL_UNSIGNED_SHORT, None)
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, cube_internal_format, cw, ch, 0, GL.GL_RGBA, gl_type, None)
         GL.glFramebufferTexture(GL.GL_FRAMEBUFFER, GL.GL_COLOR_ATTACHMENT0, cube_color_tex, 0)
         GL.glDrawBuffers([GL.GL_COLOR_ATTACHMENT0,])
         if GL.glCheckFramebufferStatus(GL.GL_FRAMEBUFFER) != GL.GL_FRAMEBUFFER_COMPLETE:
@@ -158,7 +170,7 @@ class Converter(object):
                 if (dpdx.x > 0.5) dpdx.x -= 1; // use "repeat" wrapping on gradient
                 if (dpdx.x < -0.5) dpdx.x += 1;
                 vec2 dpdy = dFdy(eq);
-                frag_color = 50 * textureGrad(equirect, eq, dpdx, dpdy);
+                frag_color = textureGrad(equirect, eq, dpdx, dpdy);
 
                 // frag_color = vec4(eq, 0.5, 1);
                 // frag_color = vec4(xyz, 1);
@@ -171,7 +183,7 @@ class Converter(object):
         equi_tex = GL.glGenTextures(1)
         GL.glActiveTexture(GL.GL_TEXTURE0)
         GL.glBindTexture(GL.GL_TEXTURE_2D, equi_tex)
-        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, GL.GL_RGB16, ew, eh, 0, GL.GL_RGB, GL.GL_UNSIGNED_SHORT, arr)
+        GL.glTexImage2D(GL.GL_TEXTURE_2D, 0, input_internal_format, ew, eh, 0, GL.GL_RGB, gl_type, arr)
         aniso = GL.glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT)
         GL.glTexParameterf(GL.GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso)
         GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT);
@@ -197,8 +209,8 @@ class Converter(object):
             self.render_scene()
             GL.glFinish()
         # fetch the rendered image
-        result = numpy.zeros(shape=(ch, cw, 4), dtype='uint16')
-        GL.glReadPixels(0, 0, cw, ch, GL.GL_RGBA, GL.GL_UNSIGNED_SHORT, result)
+        result = numpy.zeros(shape=(ch, cw, 4), dtype=arr.dtype)
+        GL.glReadPixels(0, 0, cw, ch, GL.GL_RGBA, gl_type, result)
         print(cw, ch)
         print(result.shape)
         # print(result.shape)
@@ -219,49 +231,41 @@ def to_cube(arr):
         return Converter().cube_from_equirect(arr)
     raise NotImplementedError()
 
-def main():
-    tif = TIFF.open('1w180.9.tiff', 'r')
-    arr = tif.read_image()
-    tif.close()
-    # Clip data to percentile range with dynamic range below 65535
-    pct_low = 0
-    pct_high = 100
-    val_low, val_high = numpy.percentile(arr[numpy.nonzero(arr)], [pct_low, pct_high])
-    dynamic_range = val_high / val_low
-    eps = 0.07
-    while dynamic_range > 65535:
-        pct_low = eps
-        pct_high = 100.0 - eps
+def main(arr):
+    if (arr.dtype == numpy.float32):
+        # Clip data to percentile range with dynamic range below 65535
+        pct_low = 0
+        pct_high = 100
         val_low, val_high = numpy.percentile(arr[numpy.nonzero(arr)], [pct_low, pct_high])
         dynamic_range = val_high / val_low
-        print(pct_low, pct_high, val_low, val_high, dynamic_range)
-        eps *= 1.2
-    arr *= 65535.0 / val_high
-    arr[arr>65535] = 65535
-    arr[arr<0] = 0
-    print(numpy.histogram(arr))
-    arr = arr.astype('uint16')
-    #
+        eps = 0.07
+        while dynamic_range > 65535:
+            pct_low = eps
+            pct_high = 100.0 - eps
+            val_low, val_high = numpy.percentile(arr[numpy.nonzero(arr)], [pct_low, pct_high])
+            dynamic_range = val_high / val_low
+            print(pct_low, pct_high, val_low, val_high, dynamic_range)
+            eps *= 1.2
+        arr *= 65535.0 / val_high
+        arr[arr>65535] = 65535
+        arr[arr<0] = 0
+        # print(numpy.histogram(arr))
+        arr = arr.astype('uint16')
     cube = Converter().cube_from_equirect(arr)
-    print(cube.shape)
-    # This is the slow part
-    save_png = True
-    if save_png:
+    return cube
+
+
+if __name__ == "__main__":
+    if True:
+        tif = TIFF.open('1w180.9.tiff', 'r')
+        arr = tif.read_image()
+        tif.close()
+    else:
+        jpeg = Image.open('_0010782_stitch2.jpg')
+        arr = numpy.array(jpeg)
+    cube = main(arr)
+    if cube.dtype == numpy.uint16:
         img = png.from_array(cube, 'RGBA')
         img.save('cube.png')
-
-    print(arr.shape, arr.dtype)
-    # print(arr)
-    print(numpy.amin(arr))
-    fmax = numpy.amax(arr)
-    print(fmax)
-    # Convert to 16-bit uint
-    arr2 = arr * 65535.99/fmax
-    arr2 = arr2.astype('uint16')
-    # print(numpy.amax(arr2))
-    # todo: Append an alpha channel
-
-    # img = png.from_array(arr2, 'RGB')
-    # img.save('test2.png')
-
-main()
+    else:
+        Image.fromarray(cube).save('cube.jpg', quality=95)
