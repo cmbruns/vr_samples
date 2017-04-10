@@ -2,7 +2,7 @@
 Convert spherical panorama in equirectangular format into cubemap format
 """
 
-import math
+from math import pi, log2
 
 import numpy
 from libtiff import TIFF
@@ -10,7 +10,7 @@ import png
 import glfw
 from OpenGL import GL
 from OpenGL.GL import shaders
-from OpenGL.GL.EXT.texture_filter_anisotropic import *
+from OpenGL.GL.EXT.texture_filter_anisotropic import GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GL_TEXTURE_MAX_ANISOTROPY_EXT
 
 class Converter(object):
     def render_scene(self):
@@ -30,11 +30,15 @@ class Converter(object):
         ew = arr.shape[1]
         print(ew, eh)
         # Cubemap has same width, and height *  1.5, right? todo:
-        # scale = 4.0 / math.pi # so cube face center resolution matches equirectangular equator resolution
-        scale = 1.0
-        # scale *= 1.0 / 8.0 # smaller for faster testing
-        cw = int(scale * ew)
-        ch = int(scale * eh * 1.50)
+        scale = 4.0 / pi # tan(a)/a [a == 45 degrees] # so cube face center resolution matches equirectangular equator resolution
+        # scale = 1.0
+        scale *= 1.0 / 4.0 # optional: smaller for faster testing
+        tile_size = int(scale * ew / 4.0)
+        # optional: clip to nearest power of two subtile size
+        tile_size = int(pow(2.0, int(log2(tile_size))))
+        print("tile size = ", tile_size, " pixels")
+        cw = 4 * tile_size
+        ch = 3 * tile_size
         print(cw, ch)
         glfw.init()
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
@@ -185,7 +189,7 @@ class Converter(object):
         if bToScreen:
             GL.glBindFramebuffer(GL.GL_FRAMEBUFFER, 0)
             # while not glfw.window_should_close(w):
-            for f in range(100):
+            for _ in range(100):
                 self.render_scene()
                 glfw.swap_buffers(w)
         else:
@@ -219,7 +223,6 @@ def main():
     tif = TIFF.open('1w180.9.tiff', 'r')
     arr = tif.read_image()
     tif.close()
-    fmin = numpy.amin(arr[numpy.nonzero(arr)])
     # Clip data to percentile range with dynamic range below 65535
     pct_low = 0
     pct_high = 100
