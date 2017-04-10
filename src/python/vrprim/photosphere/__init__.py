@@ -44,7 +44,7 @@ class PanoramaRaster(object):
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return """
-            #line 45
+            #line 48
             layout(binding = %d) uniform sampler2D equirectangular_image;
             
             vec4 color_for_direction(in vec3 d) {
@@ -131,7 +131,7 @@ class CubeMapRaster(PanoramaRaster):
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return """
-            #line 92
+            #line 135
             layout(binding = %d) uniform samplerCube cubemap_image;
             
             vec4 color_for_direction(in vec3 d) {
@@ -141,19 +141,34 @@ class CubeMapRaster(PanoramaRaster):
 
 
 class InfiniteBackground(object):
-    def __init__(self, raster):
-        self.raster = raster    
+    def shader_fragment(self):
+        return """
+            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
+            {
+                return true_direction; // there is no parallax at infinite distance
+            }
+            """
+
+class SphericalPanorama(object):
+    def __init__(self, raster, proxy_geometry=InfiniteBackground()):
+        self.raster = raster
+        self.proxy_geometry = proxy_geometry
+        self.vao = None
     
     def init_gl(self):
+        self.vao = GL.glGenVertexArrays(1)
+        GL.glBindVertexArray(self.vao)
+        self.raster.init_gl()
         # Set up shaders for rendering
         vertex_shader = compileShader(
             """#version 450 core
-            #line 95
+            #line 166
             
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
 
             out vec3 viewDir;
+            flat out vec3 camPos;
             
             // projected screen quad
             const vec4 SCREEN_QUAD[4] = vec4[4](
@@ -170,33 +185,43 @@ class InfiniteBackground(object):
                 int vertexIndex = TRIANGLE_STRIP_INDICES[gl_VertexID];
                 gl_Position = vec4(SCREEN_QUAD[vertexIndex]);
                 mat4 xyzFromNdc = inverse(projection * model_view);
-                vec4 campos = xyzFromNdc * vec4(0, 0, 0, 1);
+                vec4 camPos4 = xyzFromNdc * vec4(0, 0, 0, 1);
+                camPos = camPos4.xyz / camPos4.w;
                 vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
-                viewDir = vpos.xyz/vpos.w - campos.xyz/campos.w;
+                viewDir = vpos.xyz/vpos.w - camPos;
             }
             """,
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 125
+            #line 198
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
             %s // raster implementation gets inserted here...
-            #line 130
+            #line 202
+            
+            // prototype to be defined by proxy geometry implementation
+            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location);
+            %s // proxy geometry implementation gets inserted here...
+            #line 208
             
             in vec3 viewDir;
+            in vec3 camPos;
             out vec4 pixelColor;
             
             void main() 
             {
-                pixelColor = color_for_direction(viewDir);
+                vec3 dir = adjusted_view_direction(viewDir, camPos);
+                pixelColor = color_for_direction(dir);
             }
-            """ % (self.raster.shader_fragment()),
+            """ % (self.raster.shader_fragment(), self.proxy_geometry.shader_fragment()),
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
+        GL.glBindVertexArray(self.vao)
+        self.raster.display_gl()
         # print(modelview)
         GL.glUseProgram(self.shader)
         GL.glUniformMatrix4fv(1, 1, False, projection)
@@ -204,31 +229,10 @@ class InfiniteBackground(object):
         GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
         
     def dispose_gl(self):
+        self.raster.dispose_gl()
+        GL.glDeleteVertexArrays(1, [self.vao,])
         if self.shader is not None:
             GL.glDeleteProgram(self.shader)
-    
-
-class SphericalPanorama(object):
-    def __init__(self, raster):
-        self.raster = raster
-        self.renderer = InfiniteBackground(raster)
-        self.vao = None
-        
-    def init_gl(self):
-        self.vao = GL.glGenVertexArrays(1)
-        GL.glBindVertexArray(self.vao)
-        self.raster.init_gl()
-        self.renderer.init_gl()
-
-    def display_gl(self, modelview, projection):
-        GL.glBindVertexArray(self.vao)
-        self.raster.display_gl()
-        self.renderer.display_gl(modelview, projection)
-
-    def dispose_gl(self):
-        self.raster.dispose_gl()
-        self.renderer.dispose_gl()
-        GL.glDeleteVertexArrays(1, [self.vao,])
 
 
 if __name__ == "__main__":
@@ -240,7 +244,7 @@ if __name__ == "__main__":
     from openvr.gl_renderer import OpenVrGlRenderer
 
     src_folder = os.path.dirname(os.path.abspath(__file__))
-    if True:
+    if False:
         img_path = os.path.join(src_folder, '../../../../assets/images/_0010782_stitch2.jpg')
         raster = EquirectangularRaster(img_path)
     else:
