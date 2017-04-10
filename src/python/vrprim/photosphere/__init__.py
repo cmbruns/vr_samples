@@ -140,17 +140,8 @@ class CubeMapRaster(PanoramaRaster):
         """ % (self.texture_unit)
 
 
-class InfiniteBackground(object):
-    def shader_fragment(self):
-        return """
-            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
-            {
-                return true_direction; // there is no parallax at infinite distance
-            }
-            """
-
 class SphericalPanorama(object):
-    def __init__(self, raster, proxy_geometry=InfiniteBackground()):
+    def __init__(self, raster, proxy_geometry):
         self.raster = raster
         self.proxy_geometry = proxy_geometry
         self.vao = None
@@ -162,7 +153,7 @@ class SphericalPanorama(object):
         # Set up shaders for rendering
         vertex_shader = compileShader(
             """#version 450 core
-            #line 166
+            #line 157
             
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
@@ -194,17 +185,17 @@ class SphericalPanorama(object):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 198
+            #line 189
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
             %s // raster implementation gets inserted here...
-            #line 202
+            #line 194
             
             // prototype to be defined by proxy geometry implementation
             vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location);
             %s // proxy geometry implementation gets inserted here...
-            #line 208
+            #line 199
             
             in vec3 viewDir;
             in vec3 camPos;
@@ -235,6 +226,57 @@ class SphericalPanorama(object):
             GL.glDeleteProgram(self.shader)
 
 
+class InfiniteBackground(object):
+    """
+    Proxy geometry representing a spherical panorama at infinite distance.
+    For example the celestial sphere of stars and planets and other distant objects.
+    """
+    def shader_fragment(self):
+        return """
+            #line 237
+            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
+            {
+                return true_direction; // there is no parallax at infinite distance
+            }
+            """
+
+
+class InfinitePlane(object):
+    def __init__(self, plane_equation=[0, 1, 0, 0]):
+        self.plane_equation = plane_equation
+    
+    """
+    Proxy geometry representing a spherical panorama at infinite distance.
+    For example the celestial sphere of stars and planets and other distant objects.
+    """
+    def shader_fragment(self):
+        p = self.plane_equation
+        return """
+            #line 256
+            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
+            {
+                const vec4 plane_equation = vec4(%f, %f, %f, %f);
+                const vec3 original_camera_position = vec3(0, 2, 0);
+
+                // intersection of view direction and plane
+                // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
+                const vec3 w = plane_equation.xyz;
+                const float e = plane_equation.w;
+                vec3 l = true_direction;
+
+                // Some directions don't intersect the plane
+                float determinant = dot(w, l);
+                if (determinant > 0.0) discard; // plane is not visible
+                
+                vec3 m = cross(eye_location, l);
+                // r is the point on the floor we are looking at
+                vec3 r = (cross(w, m) - e*l) / dot(w,l);
+                
+                return r - original_camera_position;
+            }
+            """ % (p[0], p[1], p[2], p[3])
+
+
 if __name__ == "__main__":
     # Open equirectangular photosphere
     import os
@@ -250,7 +292,8 @@ if __name__ == "__main__":
     else:
         img_path = os.path.join(src_folder, '../../../../assets/images/lauterbrunnen_cube.jpg')
         raster = CubeMapRaster(img_path)
-    actor = SphericalPanorama(raster)
-    renderer = OpenVrGlRenderer(actor)
+    actor1 = SphericalPanorama(raster=raster, proxy_geometry=InfiniteBackground())
+    actor2 = SphericalPanorama(raster=raster, proxy_geometry=InfinitePlane())
+    renderer = OpenVrGlRenderer([actor1, actor2])
     with GlfwApp(renderer, "photosphere test") as glfwApp:
         glfwApp.run_loop()
