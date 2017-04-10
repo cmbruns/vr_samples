@@ -153,7 +153,7 @@ class Converter(object):
                 vec2 eq = equirect_from_xyz(xyz);
 
                 // Use explicit level of detail to avoid seam at z==1, lon==PI
-                // Use explicit gradients, to preseve anisotropic filtering during mipmap lookup
+                // Use explicit gradients, to preserve anisotropic filtering during mipmap lookup
                 vec2 dpdx = dFdx(eq);
                 if (dpdx.x > 0.5) dpdx.x -= 1; // use "repeat" wrapping on gradient
                 if (dpdx.x < -0.5) dpdx.x += 1;
