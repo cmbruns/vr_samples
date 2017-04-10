@@ -2,23 +2,16 @@
 
 # Example program for viewing a 360 photosphere in a virtual reality headset
 
-import sys
 import os
 from textwrap import dedent
 
 import numpy
 from OpenGL.GL import * # @UnusedWildImport # this comment squelches IDE warnings
 from OpenGL.GL.shaders import compileShader, compileProgram
-import glfw
-try:
-    from PIL import Image
-except:
-    import Image
+from PIL import Image
 
-import openvr
 from openvr.glframework.glfw_app import GlfwApp
 from openvr.gl_renderer import OpenVrGlRenderer
-
 
 class SphericalPanorama(object):
     def __init__(self, image):
@@ -48,9 +41,8 @@ class SphericalPanorama(object):
         glBindTexture(GL_TEXTURE_2D, 0);
         # Set up shaders for rendering
         vertex_shader = compileShader(dedent(
-                """\
-                #version 450 core
-                #line 54
+                """#version 450 core
+                #line 46
                 
                 layout(location = 1) uniform mat4 projection = mat4(1);
                 layout(location = 2) uniform mat4 model_view = mat4(1);
