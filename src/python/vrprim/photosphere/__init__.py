@@ -163,10 +163,10 @@ class SphericalPanorama(object):
             
             // projected screen quad
             const vec4 SCREEN_QUAD[4] = vec4[4](
-                vec4(-1, -1, 0.1, 1),
-                vec4( 1, -1, 0.1, 1),
-                vec4( 1,  1, 0.1, 1),
-                vec4(-1,  1, 0.1, 1));
+                vec4(-1, -1, 0.5, 1),
+                vec4( 1, -1, 0.5, 1),
+                vec4( 1,  1, 0.5, 1),
+                vec4(-1,  1, 0.5, 1));
 
             const int TRIANGLE_STRIP_INDICES[4] = int[4](
                 0, 1, 3, 2);
@@ -191,17 +191,17 @@ class SphericalPanorama(object):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 189
+            #line 194
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
             %s // raster implementation gets inserted here...
-            #line 194
+            #line 200
             
             // prototype to be defined by proxy geometry implementation
             vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location);
             %s // proxy geometry implementation gets inserted here...
-            #line 199
+            #line 205
             
             in vec3 viewDir;
             in vec3 camPos;
@@ -240,7 +240,7 @@ class InfiniteBackground(object):
     """
     def shader_fragment(self):
         return """
-            #line 237
+            #line 244
             vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
             {
                 return true_direction; // there is no parallax at infinite distance
@@ -259,7 +259,7 @@ class InfinitePlane(object):
     def shader_fragment(self):
         p = self.plane_equation
         return """
-            #line 256
+            #line 263
             vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
             {
                 const vec4 plane_equation = vec4(%f, %f, %f, %f);
@@ -273,7 +273,11 @@ class InfinitePlane(object):
 
                 // Some directions don't intersect the plane
                 float determinant = dot(w, l);
-                if (determinant >= 0.0) discard; // plane is not visible
+                // use a finite cutoff to avoid numerical problems at the horizon
+                if (determinant >= -1e-3) discard; // plane is not visible above the horizon
+                
+                // Viewpoint might be behind the plane
+                if (dot(vec4(eye_location, 1), plane_equation) < 0) discard;
                 
                 vec3 m = cross(eye_location, l);
                 // r is the point on the floor we are looking at
