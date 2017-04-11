@@ -29,7 +29,7 @@ class PanoramaRaster(object):
     def init_gl(self):
         self.texture_handle = GL.glGenTextures(1)
         GL.glBindTexture(self.target, self.texture_handle)
-        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST)
         GL.glTexParameteri(self.target, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR_MIPMAP_LINEAR)
         self._upload_texture()
         GL.glGenerateMipmap(self.target)
@@ -163,21 +163,27 @@ class SphericalPanorama(object):
             
             // projected screen quad
             const vec4 SCREEN_QUAD[4] = vec4[4](
-                vec4(-1, -1, 1, 1),
-                vec4( 1, -1, 1, 1),
-                vec4( 1,  1, 1, 1),
-                vec4(-1,  1, 1, 1));
-            
+                vec4(-1, -1, 0.1, 1),
+                vec4( 1, -1, 0.1, 1),
+                vec4( 1,  1, 0.1, 1),
+                vec4(-1,  1, 0.1, 1));
+
             const int TRIANGLE_STRIP_INDICES[4] = int[4](
                 0, 1, 3, 2);
+            
+            vec3 camPosFromModelView(in mat4 modelView) {
+                // assuming no scaling
+                mat3 rot = mat3(modelView);
+                vec3 d = vec3(modelView[3]);
+                return -d * rot;
+            }
             
             void main() 
             {
                 int vertexIndex = TRIANGLE_STRIP_INDICES[gl_VertexID];
                 gl_Position = vec4(SCREEN_QUAD[vertexIndex]);
                 mat4 xyzFromNdc = inverse(projection * model_view);
-                vec4 camPos4 = xyzFromNdc * vec4(0, 0, 0, 1);
-                camPos = camPos4.xyz / camPos4.w;
+                camPos = camPosFromModelView(model_view);
                 vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
                 viewDir = vpos.xyz/vpos.w - camPos;
             }
@@ -214,6 +220,7 @@ class SphericalPanorama(object):
         GL.glBindVertexArray(self.vao)
         self.raster.display_gl()
         # print(modelview)
+        # print(projection)
         GL.glUseProgram(self.shader)
         GL.glUniformMatrix4fv(1, 1, False, projection)
         GL.glUniformMatrix4fv(2, 1, False, modelview)
@@ -266,7 +273,7 @@ class InfinitePlane(object):
 
                 // Some directions don't intersect the plane
                 float determinant = dot(w, l);
-                if (determinant > 0.0) discard; // plane is not visible
+                if (determinant >= 0.0) discard; // plane is not visible
                 
                 vec3 m = cross(eye_location, l);
                 // r is the point on the floor we are looking at
@@ -294,6 +301,6 @@ if __name__ == "__main__":
         raster = CubeMapRaster(img_path)
     actor1 = SphericalPanorama(raster=raster, proxy_geometry=InfiniteBackground())
     actor2 = SphericalPanorama(raster=raster, proxy_geometry=InfinitePlane())
-    renderer = OpenVrGlRenderer([actor1, actor2])
+    renderer = OpenVrGlRenderer([actor1, actor2,])
     with GlfwApp(renderer, "photosphere test") as glfwApp:
         glfwApp.run_loop()
