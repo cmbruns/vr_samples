@@ -191,7 +191,7 @@ class SphericalPanorama(object):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 194
+            #line 195
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
@@ -199,9 +199,12 @@ class SphericalPanorama(object):
             #line 200
             
             // prototype to be defined by proxy geometry implementation
-            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location);
+            // argument eye_location is in units of meters
+            // argument local_view_direction need not be normalized
+            // result direction is not necessarily normalized
+            vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location);
             %s // proxy geometry implementation gets inserted here...
-            #line 205
+            #line 208
             
             in vec3 viewDir;
             in vec3 camPos;
@@ -240,10 +243,10 @@ class InfiniteBackground(object):
     """
     def shader_fragment(self):
         return """
-            #line 244
-            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
+            #line 247
+            vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
-                return true_direction; // there is no parallax at infinite distance
+                return local_view_direction; // there is no parallax at infinite distance
             }
             """
 
@@ -259,61 +262,39 @@ class InfinitePlane(object):
     def shader_fragment(self):
         p = self.plane_equation
         return """
-            #line 263
-            vec3 adjusted_view_direction(in vec3 true_direction, in vec3 eye_location)
+            #line 266
+            vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
                 const vec4 plane_equation = vec4(%f, %f, %f, %f);
-                const vec3 original_camera_position = vec3(0, 2, 0);
+                const vec3 original_camera_position = vec3(0, 2, 0); // todo: pass in as uniform
 
-                if (false) {
-                    // intersection of view direction and plane
-                    // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
-                    const vec3 w = plane_equation.xyz;
-                    const float e = plane_equation.w;
-                    vec3 l = true_direction;
-    
-                    // Some directions don't intersect the plane
-                    float determinant = dot(w, l);
-                    // use a finite cutoff to avoid numerical problems at the horizon
-                    if (determinant >= -1e-3) discard; // plane is not visible above the horizon
-                    
-                    // Viewpoint might be behind the plane
-                    if (dot(vec4(eye_location, 1), plane_equation) < 0) discard;
-                    
-                    vec3 m = cross(eye_location, l);
-                    // r is the point on the floor we are looking at
-                    vec3 r = (cross(w, m) - e*l) / dot(w,l);
-                    
-                    return r - original_camera_position;
-                }
-                else {
-                    // Alternate approach gains numerical stability by never
-                    // explicitly generating intersection points; especially
-                    // near the horizon.
-                    float h1 = dot(vec4(eye_location, 1), plane_equation);
-                    if (h1 < 0) 
-                        discard; // current viewpoint is under the plane
-                    float discrim = dot(plane_equation.xyz, true_direction);
-                    if (discrim > 0)
-                        discard; // view direction is away from the plane
-                    // component of view direction orthogonal to plane
-                    vec3 d1_orth = discrim * plane_equation.xyz;
-                    // component of view direction parallel to plane
-                    vec3 d1_par = true_direction - d1_orth;
-                    // 1) First scale view vector by relative distance from plane.
-                    // Because original camera height (h0) is more stable than current
-                    // viewpoint height (h1), use h0 as the denominator and scale
-                    // the parallel component (as opposed to h1 denominator and
-                    // orthogonal component) of the view direction.
-                    float h0 = dot(vec4(original_camera_position, 1), plane_equation);
-                    vec3 d0_par = d1_par * (h1 / h0); // OK
-                    // 2) Shift viewpoint by parallel offset
-                    vec3 dv = eye_location - original_camera_position;
-                    vec3 dv_orth = dot(plane_equation.xyz, dv) * plane_equation.xyz;
-                    vec3 dv_par = dv - dv_orth;
-                    d0_par += dv_par * (length(d1_orth) / h0);
-                    return d0_par + d1_orth;
-                }
+                // This approach gains numerical stability by never
+                // explicitly generating plane intersection points; especially
+                // near the horizon.
+                // Compute distance between plane and local viewpoint
+                float h1 = dot(vec4(eye_location, 1), plane_equation);
+                if (h1 < 0) 
+                    discard; // current viewpoint is under the plane
+                float discrim = dot(plane_equation.xyz, local_view_direction);
+                if (discrim > 0)
+                    discard; // view direction does not intersect the plane
+                // component of view direction orthogonal to plane
+                vec3 d_orth = discrim * plane_equation.xyz;
+                // component of view direction parallel to plane
+                vec3 d_par = local_view_direction - d_orth;
+                // 1) First scale view vector by relative distance from plane.
+                // Because original camera height (h0) is more stable than current
+                // viewpoint height (h1), use h0 as the denominator and scale
+                // the parallel component (as opposed to h1 denominator and
+                // orthogonal component) of the view direction.
+                float h0 = dot(vec4(original_camera_position, 1), plane_equation);
+                d_par = d_par * (h1 / h0); // OK
+                // 2) Shift viewpoint by parallel offset
+                vec3 dv = eye_location - original_camera_position;
+                vec3 dv_orth = dot(plane_equation.xyz, dv) * plane_equation.xyz;
+                vec3 dv_par = dv - dv_orth;
+                d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
+                return d_par + d_orth; // reconstruct full view direction from two components
             }
             """ % (p[0], p[1], p[2], p[3])
 
