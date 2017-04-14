@@ -265,25 +265,55 @@ class InfinitePlane(object):
                 const vec4 plane_equation = vec4(%f, %f, %f, %f);
                 const vec3 original_camera_position = vec3(0, 2, 0);
 
-                // intersection of view direction and plane
-                // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
-                const vec3 w = plane_equation.xyz;
-                const float e = plane_equation.w;
-                vec3 l = true_direction;
-
-                // Some directions don't intersect the plane
-                float determinant = dot(w, l);
-                // use a finite cutoff to avoid numerical problems at the horizon
-                if (determinant >= -1e-3) discard; // plane is not visible above the horizon
-                
-                // Viewpoint might be behind the plane
-                if (dot(vec4(eye_location, 1), plane_equation) < 0) discard;
-                
-                vec3 m = cross(eye_location, l);
-                // r is the point on the floor we are looking at
-                vec3 r = (cross(w, m) - e*l) / dot(w,l);
-                
-                return r - original_camera_position;
+                if (false) {
+                    // intersection of view direction and plane
+                    // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
+                    const vec3 w = plane_equation.xyz;
+                    const float e = plane_equation.w;
+                    vec3 l = true_direction;
+    
+                    // Some directions don't intersect the plane
+                    float determinant = dot(w, l);
+                    // use a finite cutoff to avoid numerical problems at the horizon
+                    if (determinant >= -1e-3) discard; // plane is not visible above the horizon
+                    
+                    // Viewpoint might be behind the plane
+                    if (dot(vec4(eye_location, 1), plane_equation) < 0) discard;
+                    
+                    vec3 m = cross(eye_location, l);
+                    // r is the point on the floor we are looking at
+                    vec3 r = (cross(w, m) - e*l) / dot(w,l);
+                    
+                    return r - original_camera_position;
+                }
+                else {
+                    // Alternate approach gains numerical stability by never
+                    // explicitly generating intersection points; especially
+                    // near the horizon.
+                    float h1 = dot(vec4(eye_location, 1), plane_equation);
+                    if (h1 < 0) 
+                        discard; // current viewpoint is under the plane
+                    float discrim = dot(plane_equation.xyz, true_direction);
+                    if (discrim > 0)
+                        discard; // view direction is away from the plane
+                    // component of view direction orthogonal to plane
+                    vec3 d1_orth = discrim * plane_equation.xyz;
+                    // component of view direction parallel to plane
+                    vec3 d1_par = true_direction - d1_orth;
+                    // 1) First scale view vector by relative distance from plane.
+                    // Because original camera height (h0) is more stable than current
+                    // viewpoint height (h1), use h0 as the denominator and scale
+                    // the parallel component (as opposed to h1 denominator and
+                    // orthogonal component) of the view direction.
+                    float h0 = dot(vec4(original_camera_position, 1), plane_equation);
+                    vec3 d0_par = d1_par * (h1 / h0); // OK
+                    // 2) Shift viewpoint by parallel offset
+                    vec3 dv = eye_location - original_camera_position;
+                    vec3 dv_orth = dot(plane_equation.xyz, dv) * plane_equation.xyz;
+                    vec3 dv_par = dv - dv_orth;
+                    d0_par += dv_par * (length(d1_orth) / h0);
+                    return d0_par + d1_orth;
+                }
             }
             """ % (p[0], p[1], p[2], p[3])
 
