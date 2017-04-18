@@ -9,6 +9,7 @@ from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 
 
+
 def translate(xyz):
     x, y, z = xyz
     return numpy.matrix(
@@ -81,7 +82,7 @@ class GlfwViewer(object):
 
     def display_gl(self):
         glfw.make_context_current(self.window)
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
         self.render_scene(self.modelview, self.projection)
         glfw.swap_buffers(self.window)
         glfw.poll_events()
@@ -167,7 +168,7 @@ class ObjViewer(GlfwViewer):
     
     def init_gl(self):
         super(ObjViewer, self).init_gl()
-        GL.glDisable(GL.GL_DEPTH_TEST)
+        GL.glEnable(GL.GL_DEPTH_TEST)
         GL.glClearColor(0.5, 0.5, 0.5, 1)
         self.ibo.bind()
         self.vbo.bind()
@@ -200,14 +201,19 @@ class ObjViewer(GlfwViewer):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 200
+            #line 204
     
             in vec3 normal;
             out vec4 fragColor;
 
+            vec4 color_by_normal(in vec3 n) {
+                return vec4(0.5 * (normalize(n) + vec3(1)), 1);
+            }
+
             void main() 
             {
-                fragColor = vec4(0, 1, 0, 1);
+                // fragColor = vec4(0, 1, 0, 1);
+                fragColor = color_by_normal(normal);
             }
             """,
             GL.GL_FRAGMENT_SHADER)
