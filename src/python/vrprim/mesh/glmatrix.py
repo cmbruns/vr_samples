@@ -8,38 +8,17 @@ import math
 
 import numpy
 
-class GlMatrix(object):
+class GlMatrix(numpy.matrix):
     '''
     Wrapper around numpy.matrix providing obsolete OpenGL-like API.
-    Except these matrices are column major, so the method definitions
-    can better resemble the OpenGL docs.
-    So remember to use pre-multiplication to compose these matrices.
-    And use the bytes() method to get a transposed flattened version for 
-    use in calls to, say,
-        glUniformMatrix4fv(...,..., False, foo.bytes())
-        or
-        glUniformMatrix4fv(...,..., True, foo.bytes(False))
     '''
 
-    _dtype = numpy.float32
-    
-    def __init__(self, data):
-        self._matrix = numpy.matrix(data, dtype=self._dtype)
-        
-    def __getitem__(self, key):
-        return self._matrix[key]
-    
-    def __setitem__(self, key, value):
-        self._matrix[key] = value
-        
-    def __mul__(self, rhs):
-        return GlMatrix(self._matrix * rhs._matrix)
-    
-    def bytes(self, do_transpose=True):
+    @staticmethod
+    def matrixbytes(matrix, do_transpose=False):
         if do_transpose:
-            return numpy.ascontiguousarray(self._matrix.T, dtype=self._dtype)
+            return numpy.ascontiguousarray(matrix.T)
         else:
-            return numpy.ascontiguousarray(self._matrix, dtype=self._dtype)
+            return numpy.ascontiguousarray(matrix)
     
     @staticmethod
     def frustum(left, right, bottom, top, zNear, zFar):
@@ -47,27 +26,27 @@ class GlMatrix(object):
         B = (top + bottom) / (top - bottom)
         C = -(zFar + zNear) / (zFar - zNear)
         D = -(2.0 * zFar * zNear) / (zFar - zNear)
-        return GlMatrix([
+        return numpy.matrix([
                 [2.0 * zNear / (right - left), 0.0, A, 0.0],
                 [0.0, 2.0 * zNear / (top - bottom), B, 0.0],
                 [0.0, 0.0, C, D],
-                [0.0, 0.0, -1.0, 0.0]])
+                [0.0, 0.0, -1.0, 0.0]], dtype=numpy.float32).T
 
     @staticmethod
     def identity():
-        return GlMatrix([
+        return numpy.matrix([
                 [1, 0, 0, 0],
                 [0, 1, 0, 0],
                 [0, 0, 1, 0],
-                [0, 0, 0, 1]])
+                [0, 0, 0, 1]], dtype=numpy.float32)
     
     @staticmethod
     def ortho(l, r, b, t, n, f):
-        return GlMatrix([
+        return numpy.matrix([
                 [2.0/(r-l), 0, 0, -(r+l)/(r-l)],
                 [0, 2.0/(t-b), 0, -(t+b)/(t-b)],
                 [0, 0, -2.0/(f-n), -(f+n)/(f-n)],
-                [0, 0, 0, 1]])
+                [0, 0, 0, 1]], dtype=numpy.float32).T
 
     @staticmethod
     def perspective(fovY, aspect, zNear, zFar):
@@ -76,21 +55,33 @@ class GlMatrix(object):
         return GlMatrix.frustum(-fW, fW, -fH, fH, zNear, zFar)
 
     @staticmethod
+    def rotate_X(angle):
+        s = math.sin(float(angle))
+        c = math.cos(float(angle))
+        return numpy.matrix([
+                [1, 0, 0, 0],
+                [0, c, -s, 0],
+                [0, s, c, 0],
+                [0, 0, 0, 1]], dtype=numpy.float32).T
+
+    @staticmethod
     def rotate_Z(angle):
         s = math.sin(float(angle))
         c = math.cos(float(angle))
-        return GlMatrix([
+        return numpy.matrix([
                 [c, -s, 0, 0],
                 [s, c, 0, 0],
                 [0, 0, 1, 0],
-                [0, 0, 0, 1]])
+                [0, 0, 0, 1]], dtype=numpy.float32).T
 
     @staticmethod
     def translate(xyz):
         x, y, z = xyz
-        return GlMatrix([
+        array = [
                 [1, 0, 0, x],
                 [0, 1, 0, y],
                 [0, 0, 1, z],
-                [0, 0, 0, 1]])
+                [0, 0, 0, 1]]
+        mat = numpy.matrix(array, dtype=numpy.float32)
+        return mat.T
         
