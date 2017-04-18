@@ -87,8 +87,7 @@ def main():
         width, height = glfw.get_framebuffer_size(window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-        m = GlMatrix.identity() # modelview matrix, m
-        m.rotate_Z(glfw.get_time())
+        m = GlMatrix.rotate_Z(glfw.get_time()) # modelview matrix, m
         ratio = width / float(height)
         # projection matrix, p
         p = GlMatrix.ortho(-ratio, ratio, -1.0, 1.0, 1.0, -1.0)

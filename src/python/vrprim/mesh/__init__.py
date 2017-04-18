@@ -8,42 +8,7 @@ import OpenGL.arrays
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 
-
-
-def translate(xyz):
-    x, y, z = xyz
-    return numpy.matrix(
-            [[1,0,0,x],
-             [0,1,0,y],
-             [0,0,1,z],
-             [0,0,0,1]], 'float32')
- 
-def identity():
-    return numpy.matrix([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-            ], 'float32')
-
-def frustum(left, right, bottom, top, zNear, zFar):
-    A = (right + left) / (right - left)
-    B = (top + bottom) / (top - bottom)
-    C = -(zFar + zNear) / (zFar - zNear)
-    D = -(2.0 * zFar * zNear) / (zFar - zNear)
-    result = numpy.matrix([
-            [2.0 * zNear / (right - left), 0.0, A, 0.0],
-            [0.0, 2.0 * zNear / (top - bottom), B, 0.0],
-            [0.0, 0.0, C, D],
-            [0.0, 0.0, -1.0, 0.0],
-            ], 'float32')
-    return result
-    # return numpy.array(result.T, 'float32') # todo: transpose or not?
-
-def perspective(fovY, aspect, zNear, zFar):
-    fH = math.tan(fovY / 2.0 / 180.0 * math.pi) * zNear
-    fW = fH * aspect
-    return frustum(-fW, fW, -fH, fH, zNear, zFar)
+from vrprim.mesh.glmatrix import GlMatrix
 
 
 class GlfwViewer(object):
@@ -77,12 +42,13 @@ class GlfwViewer(object):
         GL.glBindVertexArray(self.vao)
         GL.glClearColor(0, 0, 1, 1)
         GL.glViewport(0, 0, self.width, self.height)
-        self.modelview = translate([0, 0, -5.0])
-        self.projection = perspective(45.0, self.width / float(self.height), 0.1, 10.0)
+        self.modelview = GlMatrix.translate([0, 0, -5.0])
+        self.projection = GlMatrix.perspective(45.0, self.width / float(self.height), 0.1, 10.0)
 
     def display_gl(self):
         glfw.make_context_current(self.window)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
+        self.modelview = GlMatrix.rotate_Z(glfw.get_time()) * GlMatrix.translate([0, 0, -5.0])
         self.render_scene(self.modelview, self.projection)
         glfw.swap_buffers(self.window)
         glfw.poll_events()
@@ -225,8 +191,8 @@ class ObjViewer(GlfwViewer):
         self.vbo.bind()
         GL.glUseProgram(self.shader)
         # print(projection)
-        GL.glUniformMatrix4fv(0, 1, True, numpy.ascontiguousarray(projection, dtype=numpy.float32))
-        GL.glUniformMatrix4fv(1, 1, True, numpy.ascontiguousarray(modelview, dtype=numpy.float32))
+        GL.glUniformMatrix4fv(0, 1, False, projection.bytes())
+        GL.glUniformMatrix4fv(1, 1, False, modelview.bytes())
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
 
 
