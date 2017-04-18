@@ -12,6 +12,7 @@ from OpenGL.arrays import vbo
 from vrprim.mesh.glmatrix import GlMatrix
 
 def main():
+    # Initialize GLFW opengl API
     glfw.set_error_callback(error_callback)
     if not glfw.init():
         raise Exception("GLFW Initialization error")
@@ -19,27 +20,38 @@ def main():
     glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 5)
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+    # Create OpenGL window and context
     window = glfw.create_window(640, 480, "Triangle Viewer", None, None)
     if not window:
         glfw.terminate()
         raise RuntimeError("Failed to create glfw window")
     glfw.make_context_current(window)
+    glfw.swap_interval(1)
+    # Create vertex array object, apparently required for modern OpenGL
     vao = GL.glGenVertexArrays(1)
     GL.glBindVertexArray(vao)
-    glfw.swap_interval(1)
+    # Create triangle geometry: corner 2D location and colors
     vertices = vbo.VBO(numpy.array([
             [ -0.6, -0.4, 1.0, 0.0, 0.0 ], # x, y, r, g, b
             [  0.6, -0.4, 0.0, 1.0, 0.0 ],
             [  0.0,  0.6, 0.0, 0.0, 1.0 ],
             ], dtype='float32'))
     vertices.bind()
-    # hard-code shader parameter locations
+    # hard-code shader parameter location indices
     mvp_location = 0
     vpos_location = 0
     vcol_location = 1
+    GL.glEnableVertexAttribArray(vpos_location)
+    fsize = vertices.dtype.itemsize # 4 bytes per float32
+    GL.glVertexAttribPointer(vpos_location, 2, GL.GL_FLOAT, False,
+                          fsize * 5, vertices + fsize * 0)
+    GL.glEnableVertexAttribArray(vcol_location)
+    GL.glVertexAttribPointer(vcol_location, 3, GL.GL_FLOAT, False,
+                          fsize * 5, vertices + fsize * 2)
+    # Create GLSL shader program
     vertex_shader = compileShader(
         """#version 450 core
-        #line 39
+        #line 55
         
         layout(location = %d) uniform mat4 MVP = mat4(1);
         
@@ -57,7 +69,7 @@ def main():
         GL.GL_VERTEX_SHADER)
     fragment_shader = compileShader(
         """#version 450 core
-        #line 57
+        #line 73
 
         in vec3 color;
         out vec4 fragColor;
@@ -69,29 +81,25 @@ def main():
         """,
         GL.GL_FRAGMENT_SHADER)
     program = compileProgram(vertex_shader, fragment_shader)
-    GL.glEnableVertexAttribArray(vpos_location);
-    fsize = vertices.dtype.itemsize # 4 bytes per float32
-    GL.glVertexAttribPointer(vpos_location, 2, GL.GL_FLOAT, False,
-                          fsize * 5, vertices + fsize * 0);
-    GL.glEnableVertexAttribArray(vcol_location);
-    GL.glVertexAttribPointer(vcol_location, 3, GL.GL_FLOAT, False,
-                          fsize * 5, vertices + fsize * 2);
+    # Repeatedly draw until some event stops the program
     while not glfw.window_should_close(window):
-        width, height = glfw.get_framebuffer_size(window)
-        ratio = width / float(height)
         glfw.make_context_current(window)
+        width, height = glfw.get_framebuffer_size(window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-        m = GlMatrix.identity()
+        m = GlMatrix.identity() # modelview matrix, m
         m.rotate_Z(glfw.get_time())
+        ratio = width / float(height)
+        # projection matrix, p
         p = GlMatrix.ortho(-ratio, ratio, -1.0, 1.0, 1.0, -1.0)
         mvp = p * m
         GL.glBindVertexArray(vao)
         GL.glUseProgram(program)
-        GL.glUniformMatrix4fv(mvp_location, 1, True, mvp.bytes())
+        GL.glUniformMatrix4fv(mvp_location, 1, False, mvp.bytes())
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         glfw.swap_buffers(window)
         glfw.poll_events()
+    # Clean up and exit
     glfw.make_context_current(window)
     glfw.destroy_window(window)
     glfw.terminate()
