@@ -3,16 +3,17 @@
 
 import sys
 
-import numpy
 import glfw
+import numpy
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
-from vrprim.mesh.glmatrix import GlMatrix
+from glmatrix import rotate_Z, ortho, mbytes
+
 
 def main():
-    # Initialize GLFW opengl API
+    # Initialize GLFW OpenGL API
     glfw.set_error_callback(error_callback)
     if not glfw.init():
         raise Exception("GLFW Initialization error")
@@ -32,22 +33,22 @@ def main():
     GL.glBindVertexArray(vao)
     # Create triangle geometry: corner 2D location and colors
     vertices = vbo.VBO(numpy.array([
-            [ -0.6, -0.4, 1.0, 0.0, 0.0 ], # x, y, r, g, b
-            [  0.6, -0.4, 0.0, 1.0, 0.0 ],
-            [  0.0,  0.6, 0.0, 0.0, 1.0 ],
-            ], dtype='float32'))
+        [-0.6, -0.4, 1.0, 0.0, 0.0],  # x, y, r, g, b
+        [0.6, -0.4, 0.0, 1.0, 0.0],
+        [0.0, 0.6, 0.0, 0.0, 1.0],
+    ], dtype='float32'))
     vertices.bind()
     # hard-code shader parameter location indices
     mvp_location = 0
     vpos_location = 0
     vcol_location = 1
     GL.glEnableVertexAttribArray(vpos_location)
-    fsize = vertices.dtype.itemsize # 4 bytes per float32
+    fsize = vertices.dtype.itemsize  # 4 bytes per float32
     GL.glVertexAttribPointer(vpos_location, 2, GL.GL_FLOAT, False,
-                          fsize * 5, vertices + fsize * 0)
+                             fsize * 5, vertices + fsize * 0)
     GL.glEnableVertexAttribArray(vcol_location)
     GL.glVertexAttribPointer(vcol_location, 3, GL.GL_FLOAT, False,
-                          fsize * 5, vertices + fsize * 2)
+                             fsize * 5, vertices + fsize * 2)
     # Create GLSL shader program
     vertex_shader = compileShader(
         """#version 450 core
@@ -87,14 +88,14 @@ def main():
         width, height = glfw.get_framebuffer_size(window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-        m = GlMatrix.rotate_Z(glfw.get_time()) # modelview matrix, m
+        m = rotate_Z(glfw.get_time())  # modelview matrix, m
         ratio = width / float(height)
         # projection matrix, p
-        p = GlMatrix.ortho(-ratio, ratio, -1.0, 1.0, 1.0, -1.0)
-        mvp = p * m
+        p = ortho(-ratio, ratio, -1.0, 1.0, 1.0, -1.0)
+        mvp = m * p
         GL.glBindVertexArray(vao)
         GL.glUseProgram(program)
-        GL.glUniformMatrix4fv(mvp_location, 1, False, mvp.bytes())
+        GL.glUniformMatrix4fv(mvp_location, 1, False, mbytes(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -103,9 +104,11 @@ def main():
     glfw.destroy_window(window)
     glfw.terminate()
     sys.exit(0)
-    
-def error_callback(self, description):
+
+
+def error_callback(description):
     raise RuntimeError(description)
+
 
 if __name__ == "__main__":
     main()

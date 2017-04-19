@@ -1,4 +1,3 @@
-
 import math
 import ctypes
 
@@ -8,14 +7,16 @@ import OpenGL.arrays
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 
-from vrprim.mesh.glmatrix import GlMatrix
+import glmatrix
+from glmatrix import pack
 
 
 class GlfwViewer(object):
     def __init__(self):
         self.vao = None
         self.window = None
-    
+        self.shader = None
+
     def __enter__(self):
         if not glfw.init():
             raise Exception("GLFW Initialization error")
@@ -30,7 +31,7 @@ class GlfwViewer(object):
         glfw.set_error_callback(self.error_callback)
         self.init_gl()
         return self
-        
+
     def __exit__(self, type_, value, traceback):
         self.dispose_gl()
         glfw.destroy_window(self.window)
@@ -42,17 +43,17 @@ class GlfwViewer(object):
         GL.glBindVertexArray(self.vao)
         GL.glClearColor(0, 0, 1, 1)
         GL.glViewport(0, 0, self.width, self.height)
-        self.modelview = GlMatrix.translate([0, 0, -5.0])
-        self.projection = GlMatrix.perspective(45.0, self.width / float(self.height), 0.1, 10.0)
+        self.modelview = glmatrix.translate([0, 0, -5.0])
+        self.projection = glmatrix.perspective(45.0, self.width / float(self.height), 0.1, 10.0)
 
     def display_gl(self):
         glfw.make_context_current(self.window)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-        self.modelview = GlMatrix.rotate_Z(glfw.get_time()) * GlMatrix.translate([0, 0, -5.0])
+        self.modelview = glmatrix.rotate_z(glfw.get_time()) * glmatrix.translate([0, 0, -5.0])
         self.render_scene(self.modelview, self.projection)
         glfw.swap_buffers(self.window)
         glfw.poll_events()
-        
+
     def render_scene(self, modelview, projection):
         "Override this method in derived class"
         pass
@@ -63,12 +64,12 @@ class GlfwViewer(object):
         glfw.make_context_current(self.window)
         if not self.vao:
             return
-        GL.glDeleteVertexArrays(1, [self.vao,])
+        GL.glDeleteVertexArrays(1, [self.vao, ])
         self.vao = None
-        
+
     def error_callback(self, description):
         raise RuntimeError(description)
-    
+
     def run_loop(self):
         while not glfw.window_should_close(self.window):
             self.display_gl()
@@ -88,10 +89,10 @@ class ObjViewer(GlfwViewer):
             for line in fh:
                 if line.startswith('#'):
                     # e.g. "# Blender v2.65 (sub 0) OBJ File"
-                    continue # ignore comments
+                    continue  # ignore comments
                 elif line.startswith('o '):
                     # e.g. "o teapot.005"
-                    continue # ignore object names
+                    continue  # ignore object names
                 elif line.startswith('v '):
                     # e.g. "v -0.498530 0.712498 -0.039883"
                     vec3 = [float(x) for x in line.split()[1:4]]
@@ -101,17 +102,17 @@ class ObjViewer(GlfwViewer):
                     vec3 = [float(x) for x in line.split()[1:4]]
                     vertex_normals.append(vec3)
                 elif line.startswith('s '):
-                    continue # ignore whatever "s" is
+                    continue  # ignore whatever "s" is
                     # print(line)
                 elif line.startswith('f '):
                     face = list()
                     for c in line.split()[1:]:
                         v, n = [int(x) for x in c.split('/')[0:3:2]]
-                        face.append(v-1) # vertex index
-                        self.normal_for_vertex[v-1] = vertex_normals[n-1]
+                        face.append(v - 1)  # vertex index
+                        self.normal_for_vertex[v - 1] = vertex_normals[n - 1]
                         self.faces.append(face)
-                    # print(line)
-                    # print(face)                  
+                        # print(line)
+                        # print(face)
                 else:
                     print(line)
                     break
@@ -131,20 +132,20 @@ class ObjViewer(GlfwViewer):
         ibo = numpy.array(ibo, 'int16')
         self.vbo = OpenGL.arrays.vbo.VBO(vbo)
         self.ibo = OpenGL.arrays.vbo.VBO(ibo, target=GL.GL_ELEMENT_ARRAY_BUFFER)
-    
+
     def init_gl(self):
         super(ObjViewer, self).init_gl()
         GL.glEnable(GL.GL_DEPTH_TEST)
         GL.glClearColor(0.5, 0.5, 0.5, 1)
         self.ibo.bind()
         self.vbo.bind()
-        GL.glEnableVertexAttribArray(0) # vertex location
+        GL.glEnableVertexAttribArray(0)  # vertex location
         fsize = ctypes.sizeof(ctypes.c_float)
-        GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, False, 
-                6 * fsize, ctypes.cast(0 * fsize, ctypes.c_void_p))
-        GL.glEnableVertexAttribArray(1) # vertex normal
-        GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False, 
-                6 * fsize, ctypes.cast(3 * fsize, ctypes.c_void_p))
+        GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, False,
+                                 6 * fsize, ctypes.cast(0 * fsize, ctypes.c_void_p))
+        GL.glEnableVertexAttribArray(1)  # vertex normal
+        GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False,
+                                 6 * fsize, ctypes.cast(3 * fsize, ctypes.c_void_p))
         vertex_shader = compileShader(
             """#version 450 core
             #line 180
@@ -185,20 +186,26 @@ class ObjViewer(GlfwViewer):
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
-    def render_scene(self, modelview, projection):
-        super(ObjViewer, self).render_scene(modelview, projection)
+    def dispose_gl(self):
+        self.ibo.delete()
+        self.vbo.delete()
+        super(ObjViewer, self).dispose_gl()
+
+    def render_scene(self, model_view, projection):
+        super(ObjViewer, self).render_scene(model_view, projection)
         self.ibo.bind()
         self.vbo.bind()
         GL.glUseProgram(self.shader)
         # print(projection)
-        GL.glUniformMatrix4fv(0, 1, False, projection.bytes())
-        GL.glUniformMatrix4fv(1, 1, False, modelview.bytes())
+        GL.glUniformMatrix4fv(0, 1, False, pack(projection))
+        GL.glUniformMatrix4fv(1, 1, False, pack(model_view))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
 
 
 def main():
     with ObjViewer() as v:
         v.run_loop()
+
 
 if __name__ == "__main__":
     main()

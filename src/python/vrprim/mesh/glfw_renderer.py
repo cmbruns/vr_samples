@@ -13,7 +13,8 @@ from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 import glfw
 
-from vrprim.mesh.glmatrix import GlMatrix
+import glmatrix
+from glmatrix import mbytes
 from openvr.gl_renderer import OpenVrGlRenderer
 from openvr.glframework.glfw_app import GlfwApp
 
@@ -78,9 +79,9 @@ class TriangleActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.program)
-        # mvp = modelview * GlMatrix.rotate_Z(glfw.get_time()) * projection
+        # mvp = modelview * glmatrix.rotate_Z(glfw.get_time()) * projection
         mvp = modelview * projection
-        GL.glUniformMatrix4fv(self.mvp_location, 1, False, GlMatrix.matrixbytes(mvp))
+        GL.glUniformMatrix4fv(self.mvp_location, 1, False, mbytes(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         
     def dispose_gl(self):
@@ -200,9 +201,9 @@ class TeapotActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader)
-        m = GlMatrix.rotate_X(glfw.get_time()) * modelview
-        GL.glUniformMatrix4fv(0, 1, False, GlMatrix.matrixbytes(projection))
-        GL.glUniformMatrix4fv(1, 1, False, GlMatrix.matrixbytes(m))
+        m = glmatrix.rotate_X(glfw.get_time()) * modelview
+        GL.glUniformMatrix4fv(0, 1, False, mbytes(projection))
+        GL.glUniformMatrix4fv(1, 1, False, mbytes(m))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
     
     def dispose_gl(self):
@@ -211,6 +212,7 @@ class TeapotActor(object):
             self.ibo.delete()
             self.vbo.delete()
             GL.glDeleteProgram(self.shader)
+            self.vao = None
 
 
 class GlfwRenderer(object):
@@ -263,8 +265,8 @@ class GlfwRenderer(object):
         width, height = glfw.get_framebuffer_size(self.window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-        modelview = GlMatrix.translate([0, 0, -5.0])
-        projection = GlMatrix.perspective(45.0, width / float(height), 0.1, 10.0)
+        modelview = glmatrix.translate([0, 0, -5.0])
+        projection = glmatrix.perspective(45.0, width / float(height), 0.1, 10.0)
         for actor in self.actor_list:
             actor.display_gl(modelview, projection)
         glfw.swap_buffers(self.window)
