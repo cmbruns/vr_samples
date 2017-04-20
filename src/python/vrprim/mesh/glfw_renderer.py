@@ -303,9 +303,9 @@ class GlfwOpenVrRenderer(GlfwRenderer):
         # Clean up and exit
         if self.window:
             glfw.make_context_current(self.window)
-            glfw.destroy_window(self.window)
             if self.vr_renderer is not None:
                 self.vr_renderer.dispose_gl()
+            glfw.destroy_window(self.window)
         glfw.terminate()
         sys.exit(0)
 
