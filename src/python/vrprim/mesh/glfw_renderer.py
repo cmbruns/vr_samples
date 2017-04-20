@@ -78,8 +78,7 @@ class TriangleActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.program)
-        # mvp = modelview * rotate_Z(glfw.get_time()) * projection
-        mvp = modelview * projection
+        mvp = numpy.matrix(modelview) * projection
         GL.glUniformMatrix4fv(self.mvp_location, 1, False, pack(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         
@@ -88,7 +87,7 @@ class TriangleActor(object):
             GL.glDeleteVertexArrays(1, [self.vao,])
         self.vertices.delete()
         GL.glDeleteProgram(self.program)
-        
+
 
 class TeapotActor(object):
     def __init__(self):
@@ -102,10 +101,10 @@ class TeapotActor(object):
             for line in fh:
                 if line.startswith('#'):
                     # e.g. "# Blender v2.65 (sub 0) OBJ File"
-                    continue # ignore comments
+                    continue  # ignore comments
                 elif line.startswith('o '):
                     # e.g. "o teapot.005"
-                    continue # ignore object names
+                    continue  # ignore object names
                 elif line.startswith('v '):
                     # e.g. "v -0.498530 0.712498 -0.039883"
                     vec3 = [float(x) for x in line.split()[1:4]]
@@ -115,17 +114,17 @@ class TeapotActor(object):
                     vec3 = [float(x) for x in line.split()[1:4]]
                     vertex_normals.append(vec3)
                 elif line.startswith('s '):
-                    continue # ignore whatever "s" is
+                    continue  # ignore whatever "s" is
                     # print(line)
                 elif line.startswith('f '):
                     face = list()
                     for c in line.split()[1:]:
                         v, n = [int(x) for x in c.split('/')[0:3:2]]
-                        face.append(v-1) # vertex index
-                        self.normal_for_vertex[v-1] = vertex_normals[n-1]
+                        face.append(v - 1)  # vertex index
+                        self.normal_for_vertex[v - 1] = vertex_normals[n - 1]
                         self.faces.append(face)
-                    # print(line)
-                    # print(face)                  
+                        # print(line)
+                        # print(face)
                 else:
                     print(line)
                     break
@@ -145,29 +144,29 @@ class TeapotActor(object):
         ibo = numpy.array(ibo, 'int16')
         self.vbo = vbo.VBO(self.vbo)
         self.ibo = vbo.VBO(ibo, target=GL.GL_ELEMENT_ARRAY_BUFFER)
-    
+
     def init_gl(self):
         self.vao = GL.glGenVertexArrays(1)
         GL.glBindVertexArray(self.vao)
         self.ibo.bind()
         self.vbo.bind()
-        GL.glEnableVertexAttribArray(0) # vertex location
-        fsize = self.vbo.dtype.itemsize # 4 bytes per float32
-        GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, False, 
-                6 * fsize, self.vbo + 0 * fsize)
-        GL.glEnableVertexAttribArray(1) # vertex normal
-        GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False, 
-                6 * fsize, self.vbo + 3 * fsize)
+        GL.glEnableVertexAttribArray(0)  # vertex location
+        fsize = self.vbo.dtype.itemsize  # 4 bytes per float32
+        GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, False,
+                                 6 * fsize, self.vbo + 0 * fsize)
+        GL.glEnableVertexAttribArray(1)  # vertex normal
+        GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False,
+                                 6 * fsize, self.vbo + 3 * fsize)
         vertex_shader = compileShader(
             """#version 450 core
             #line 161
-            
+
             layout(location = 0) in vec3 in_Position;
             layout(location = 1) in vec3 in_Normal;
-            
+
             layout(location = 0) uniform mat4 projection = mat4(1);
             layout(location = 1) uniform mat4 model_view = mat4(1);
-            
+
             out vec3 normal;
 
             void main() 
@@ -181,7 +180,7 @@ class TeapotActor(object):
         fragment_shader = compileShader(
             """#version 450 core
             #line 181
-    
+
             in vec3 normal;
             out vec4 fragColor;
 
@@ -196,7 +195,7 @@ class TeapotActor(object):
             """,
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
-    
+
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader)
@@ -204,10 +203,10 @@ class TeapotActor(object):
         GL.glUniformMatrix4fv(0, 1, False, pack(projection))
         GL.glUniformMatrix4fv(1, 1, False, pack(m))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
-    
+
     def dispose_gl(self):
         if self.vao:
-            GL.glDeleteVertexArrays(1, [self.vao,])
+            GL.glDeleteVertexArrays(1, [self.vao, ])
             self.ibo.delete()
             self.vbo.delete()
             GL.glDeleteProgram(self.shader)
@@ -316,7 +315,7 @@ def main():
         with GlfwApp(OpenVrGlRenderer(TriangleActor())) as app:
             app.run_loop()
     else:
-        with GlfwOpenVrRenderer([TeapotActor(), TriangleActor(),]) as rend:
+        with GlfwOpenVrRenderer([TriangleActor(), TeapotActor()]) as rend:
             while not glfw.window_should_close(rend.window):
                 rend.render()
 
