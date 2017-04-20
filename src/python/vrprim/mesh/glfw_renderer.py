@@ -5,7 +5,6 @@ Created on Apr 18, 2017
 '''
 
 import os
-import sys
 
 import glfw
 import numpy
@@ -13,9 +12,7 @@ from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
-from openvr.gl_renderer import OpenVrGlRenderer
 from openvr.glframework.glmatrix import perspective, pack, rotate_x, translate
-from openvr.glframework.glfw_app import GlfwApp
 
 
 class TriangleActor(object):
@@ -91,6 +88,7 @@ class TriangleActor(object):
 
 class TeapotActor(object):
     def __init__(self):
+        self.vao = None
         src_folder = os.path.dirname(os.path.abspath(__file__))
         obj_path = os.path.join(src_folder, 'wt_teapot.obj')
         self.vertexes = list()
@@ -195,6 +193,7 @@ class TeapotActor(object):
             """,
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
+        GL.glEnable(GL.GL_DEPTH_TEST)
 
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
@@ -213,111 +212,11 @@ class TeapotActor(object):
             self.vao = None
 
 
-class GlfwRenderer(object):
-    "Regular desktop version of GLFW renderer"
-    def __init__(self, actors=[], size=[640, 480]):
-        self.actor_list = actors
-        self.initial_size = size
-        # Initialize GLFW opengl API
-        glfw.set_error_callback(self.error_callback)
-        if not glfw.init():
-            raise Exception("GLFW Initialization error")
-        self._configure_context()
-        # Create OpenGL window and context
-        self.window = glfw.create_window(self.initial_size[0], 
-                self.initial_size[1], "Triangle Viewer", None, None)
-        if not self.window:
-            glfw.terminate()
-            raise RuntimeError("Failed to create glfw window")
-        self.init_gl()
-        glfw.swap_interval(1)
-    
-    def _configure_context(self):
-        # Use modern OpenGL version 4.5 core
-        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
-        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 5)
-        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)        
-        
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type_, value, traceback):
-        # Clean up and exit
-        if self.window:
-            glfw.make_context_current(self.window)
-            for actor in self.actor_list:
-                actor.dispose_gl()
-            glfw.destroy_window(self.window)
-        glfw.terminate()
-        sys.exit(0)
-        
-    def init_gl(self):
-        glfw.make_context_current(self.window)
-        GL.glClearColor(0.5, 0.5, 0.5, 1.0)
-        GL.glEnable(GL.GL_DEPTH_TEST)
-        for actor in self.actor_list:
-            actor.init_gl()
-        
-    def render(self, actors=[]):
-        glfw.make_context_current(self.window)
-        width, height = glfw.get_framebuffer_size(self.window)
-        GL.glViewport(0, 0, width, height)
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-        modelview = translate([0, 0, -5.0])
-        projection = perspective(45.0, width / float(height), 0.1, 10.0)
-        for actor in self.actor_list:
-            actor.display_gl(modelview, projection)
-        glfw.swap_buffers(self.window)
-        glfw.poll_events()
-        
-    def error_callback(self, error_code, description):
-        raise RuntimeError(description)
-
-
-class GlfwOpenVrRenderer(GlfwRenderer):
-    def __init__(self, actors=[], size=[640, 480]):
-        self.vr_renderer = OpenVrGlRenderer(actors)
-        super(GlfwOpenVrRenderer, self).__init__(actors, size)
-        glfw.swap_interval(0)
-        
-    def _configure_context(self):
-        # Use modern OpenGL version 4.5 core
-        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 4)
-        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 5)
-        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)        
-        glfw.window_hint(glfw.DOUBLEBUFFER, False)
-        
-    def init_gl(self):
-        glfw.make_context_current(self.window)
-        GL.glClearColor(0.5, 0.5, 0.5, 1.0)
-        GL.glEnable(GL.GL_DEPTH_TEST)
-        self.vr_renderer.init_gl()
- 
-    def render(self, actors=[]):
-        glfw.make_context_current(self.window)
-        self.vr_renderer.render_scene()
-        GL.glFlush() # single buffering        
-        glfw.poll_events()
-
-    def __exit__(self, type_, value, traceback):
-        # Clean up and exit
-        if self.window:
-            glfw.make_context_current(self.window)
-            if self.vr_renderer is not None:
-                self.vr_renderer.dispose_gl()
-            glfw.destroy_window(self.window)
-        glfw.terminate()
-        sys.exit(0)
-
-
 def main():
-    if False:
-        with GlfwApp(OpenVrGlRenderer(TriangleActor())) as app:
-            app.run_loop()
-    else:
-        with GlfwOpenVrRenderer([TriangleActor(), TeapotActor()]) as rend:
-            while not glfw.window_should_close(rend.window):
-                rend.render()
+    from openvr.glframework.glfw_app import GlfwVrApp
+    with GlfwVrApp(actors=[TeapotActor(),]) as app:
+        app.run_loop()
+
 
 if __name__ == "__main__":
     main()
