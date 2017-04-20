@@ -4,18 +4,17 @@ Created on Apr 18, 2017
 @author: brunsc
 '''
 
-import sys
 import os
+import sys
 
+import glfw
 import numpy
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
-import glfw
 
-import glmatrix
-from glmatrix import pack
 from openvr.gl_renderer import OpenVrGlRenderer
+from openvr.glframework.glmatrix import perspective, pack, rotate_x, translate
 from openvr.glframework.glfw_app import GlfwApp
 
 
@@ -79,7 +78,7 @@ class TriangleActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.program)
-        # mvp = modelview * glmatrix.rotate_Z(glfw.get_time()) * projection
+        # mvp = modelview * rotate_Z(glfw.get_time()) * projection
         mvp = modelview * projection
         GL.glUniformMatrix4fv(self.mvp_location, 1, False, pack(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
@@ -201,7 +200,7 @@ class TeapotActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader)
-        m = glmatrix.rotate_x(glfw.get_time()) * modelview
+        m = rotate_x(glfw.get_time()) * modelview
         GL.glUniformMatrix4fv(0, 1, False, pack(projection))
         GL.glUniformMatrix4fv(1, 1, False, pack(m))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
@@ -265,8 +264,8 @@ class GlfwRenderer(object):
         width, height = glfw.get_framebuffer_size(self.window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-        modelview = glmatrix.translate([0, 0, -5.0])
-        projection = glmatrix.perspective(45.0, width / float(height), 0.1, 10.0)
+        modelview = translate([0, 0, -5.0])
+        projection = perspective(45.0, width / float(height), 0.1, 10.0)
         for actor in self.actor_list:
             actor.display_gl(modelview, projection)
         glfw.swap_buffers(self.window)

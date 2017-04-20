@@ -9,7 +9,7 @@ from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
-from glmatrix import rotate_z, ortho, pack
+from openvr.glframework.glmatrix import rotate_z, ortho, pack
 
 
 def main():

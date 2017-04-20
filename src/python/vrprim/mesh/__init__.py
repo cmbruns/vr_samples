@@ -1,14 +1,12 @@
-import math
 import ctypes
 
-import numpy
-import glfw
 import OpenGL.arrays
+import glfw
+import numpy
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 
-import glmatrix
-from glmatrix import pack
+from openvr.glframework.glmatrix import perspective, pack, rotate_z, translate
 
 
 class GlfwViewer(object):
@@ -43,13 +41,13 @@ class GlfwViewer(object):
         GL.glBindVertexArray(self.vao)
         GL.glClearColor(0, 0, 1, 1)
         GL.glViewport(0, 0, self.width, self.height)
-        self.modelview = glmatrix.translate([0, 0, -5.0])
-        self.projection = glmatrix.perspective(45.0, self.width / float(self.height), 0.1, 10.0)
+        self.modelview = translate([0, 0, -5.0])
+        self.projection = perspective(45.0, self.width / float(self.height), 0.1, 10.0)
 
     def display_gl(self):
         glfw.make_context_current(self.window)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
-        self.modelview = glmatrix.rotate_z(glfw.get_time()) * glmatrix.translate([0, 0, -5.0])
+        self.modelview = rotate_z(glfw.get_time()) * translate([0, 0, -5.0])
         self.render_scene(self.modelview, self.projection)
         glfw.swap_buffers(self.window)
         glfw.poll_events()
