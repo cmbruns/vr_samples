@@ -9,7 +9,7 @@ from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
-from glmatrix import rotate_Z, ortho, mbytes
+from glmatrix import rotate_z, ortho, pack
 
 
 def main():
@@ -88,14 +88,14 @@ def main():
         width, height = glfw.get_framebuffer_size(window)
         GL.glViewport(0, 0, width, height)
         GL.glClear(GL.GL_COLOR_BUFFER_BIT)
-        m = rotate_Z(glfw.get_time())  # modelview matrix, m
+        m = rotate_z(glfw.get_time())  # modelview matrix, m
         ratio = width / float(height)
         # projection matrix, p
         p = ortho(-ratio, ratio, -1.0, 1.0, 1.0, -1.0)
         mvp = m * p
         GL.glBindVertexArray(vao)
         GL.glUseProgram(program)
-        GL.glUniformMatrix4fv(mvp_location, 1, False, mbytes(mvp))
+        GL.glUniformMatrix4fv(mvp_location, 1, False, pack(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         glfw.swap_buffers(window)
         glfw.poll_events()

@@ -14,7 +14,7 @@ from OpenGL.arrays import vbo
 import glfw
 
 import glmatrix
-from glmatrix import mbytes
+from glmatrix import pack
 from openvr.gl_renderer import OpenVrGlRenderer
 from openvr.glframework.glfw_app import GlfwApp
 
@@ -81,7 +81,7 @@ class TriangleActor(object):
         GL.glUseProgram(self.program)
         # mvp = modelview * glmatrix.rotate_Z(glfw.get_time()) * projection
         mvp = modelview * projection
-        GL.glUniformMatrix4fv(self.mvp_location, 1, False, mbytes(mvp))
+        GL.glUniformMatrix4fv(self.mvp_location, 1, False, pack(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
         
     def dispose_gl(self):
@@ -201,9 +201,9 @@ class TeapotActor(object):
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader)
-        m = glmatrix.rotate_X(glfw.get_time()) * modelview
-        GL.glUniformMatrix4fv(0, 1, False, mbytes(projection))
-        GL.glUniformMatrix4fv(1, 1, False, mbytes(m))
+        m = glmatrix.rotate_x(glfw.get_time()) * modelview
+        GL.glUniformMatrix4fv(0, 1, False, pack(projection))
+        GL.glUniformMatrix4fv(1, 1, False, pack(m))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
     
     def dispose_gl(self):
