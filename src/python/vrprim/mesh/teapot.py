@@ -1,43 +1,47 @@
-'''
+"""
 Created on Apr 18, 2017
 
-@author: brunsc
-'''
+@author: Christopher Bruns
+"""
 
 import os
 
-import glfw
 import numpy
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
-from openvr.glframework.glmatrix import perspective, pack, rotate_x, translate
+from openvr.glframework.glmatrix import identity, pack, rotate_y, scale
 
 
 class TriangleActor(object):
+    def __init__(self):
+        self.vao = None
+        # hard-code shader parameter location index
+        self.mvp_location = 0
+        self.program = None
+        # Create triangle geometry: corner 2D location and colors
+        self.vertices = vbo.VBO(numpy.array([
+            [-0.6, -0.4, 1.0, 0.0, 0.0],  # x, y, r, g, b
+            [0.6, -0.4, 0.0, 1.0, 0.0],
+            [0.0, 0.6, 0.0, 0.0, 1.0],
+        ], dtype='float32'))
+
     def init_gl(self):
         # Create vertex array object, apparently required for modern OpenGL
         self.vao = GL.glGenVertexArrays(1)
         GL.glBindVertexArray(self.vao)
-        # Create triangle geometry: corner 2D location and colors
-        self.vertices = vbo.VBO(numpy.array([
-                [ -0.6, -0.4, 1.0, 0.0, 0.0 ], # x, y, r, g, b
-                [  0.6, -0.4, 0.0, 1.0, 0.0 ],
-                [  0.0,  0.6, 0.0, 0.0, 1.0 ],
-                ], dtype='float32'))
         self.vertices.bind()
         # hard-code shader parameter location indices
-        self.mvp_location = 0
         vpos_location = 0
         vcol_location = 1
         GL.glEnableVertexAttribArray(vpos_location)
-        fsize = self.vertices.dtype.itemsize # 4 bytes per float32
+        float_size = self.vertices.dtype.itemsize  # 4 bytes per float32
         GL.glVertexAttribPointer(vpos_location, 2, GL.GL_FLOAT, False,
-                              fsize * 5, self.vertices + fsize * 0)
+                                 float_size * 5, self.vertices + float_size * 0)
         GL.glEnableVertexAttribArray(vcol_location)
         GL.glVertexAttribPointer(vcol_location, 3, GL.GL_FLOAT, False,
-                              fsize * 5, self.vertices + fsize * 2)
+                                 float_size * 5, self.vertices + float_size * 2)
         # Create GLSL shader program
         vertex_shader = compileShader(
             """#version 450 core
@@ -71,61 +75,61 @@ class TriangleActor(object):
             """,
             GL.GL_FRAGMENT_SHADER)
         self.program = compileProgram(vertex_shader, fragment_shader)
-        
-    def display_gl(self, modelview, projection):
+
+    def display_gl(self, model_view, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.program)
-        mvp = numpy.matrix(modelview) * projection
+        mvp = numpy.matrix(model_view) * projection
         GL.glUniformMatrix4fv(self.mvp_location, 1, False, pack(mvp))
         GL.glDrawArrays(GL.GL_TRIANGLES, 0, 3)
-        
+
     def dispose_gl(self):
         if self.vao:
-            GL.glDeleteVertexArrays(1, [self.vao,])
+            GL.glDeleteVertexArrays(1, [self.vao, ])
         self.vertices.delete()
         GL.glDeleteProgram(self.program)
 
 
-class TeapotActor(object):
-    def __init__(self):
+class ObjActor(object):
+    def __init__(self, obj_stream):
+        self.model_matrix = identity()
         self.vao = None
-        src_folder = os.path.dirname(os.path.abspath(__file__))
-        obj_path = os.path.join(src_folder, 'wt_teapot.obj')
+        self.shader = None
         self.vertexes = list()
         vertex_normals = list()
         self.normal_for_vertex = dict()
         self.faces = list()
-        with open(obj_path) as fh:
-            for line in fh:
-                if line.startswith('#'):
-                    # e.g. "# Blender v2.65 (sub 0) OBJ File"
-                    continue  # ignore comments
-                elif line.startswith('o '):
-                    # e.g. "o teapot.005"
-                    continue  # ignore object names
-                elif line.startswith('v '):
-                    # e.g. "v -0.498530 0.712498 -0.039883"
-                    vec3 = [float(x) for x in line.split()[1:4]]
-                    self.vertexes.append(vec3)
-                elif line.startswith('vn '):
-                    # e.g. "vn -0.901883 0.415418 0.118168"
-                    vec3 = [float(x) for x in line.split()[1:4]]
-                    vertex_normals.append(vec3)
-                elif line.startswith('s '):
-                    continue  # ignore whatever "s" is
+        fh = obj_stream
+        for line in fh:
+            if line.startswith('#'):
+                # e.g. "# Blender v2.65 (sub 0) OBJ File"
+                continue  # ignore comments
+            elif line.startswith('o '):
+                # e.g. "o teapot.005"
+                continue  # ignore object names
+            elif line.startswith('v '):
+                # e.g. "v -0.498530 0.712498 -0.039883"
+                vec3 = [float(x) for x in line.split()[1:4]]
+                self.vertexes.append(vec3)
+            elif line.startswith('vn '):
+                # e.g. "vn -0.901883 0.415418 0.118168"
+                vec3 = [float(x) for x in line.split()[1:4]]
+                vertex_normals.append(vec3)
+            elif line.startswith('s '):
+                continue  # ignore whatever "s" is
+                # print(line)
+            elif line.startswith('f '):
+                face = list()
+                for c in line.split()[1:]:
+                    v, n = [int(x) for x in c.split('/')[0:3:2]]
+                    face.append(v - 1)  # vertex index
+                    self.normal_for_vertex[v - 1] = vertex_normals[n - 1]
+                    self.faces.append(face)
                     # print(line)
-                elif line.startswith('f '):
-                    face = list()
-                    for c in line.split()[1:]:
-                        v, n = [int(x) for x in c.split('/')[0:3:2]]
-                        face.append(v - 1)  # vertex index
-                        self.normal_for_vertex[v - 1] = vertex_normals[n - 1]
-                        self.faces.append(face)
-                        # print(line)
-                        # print(face)
-                else:
-                    print(line)
-                    break
+                    # print(face)
+            else:
+                print(line)
+                break
         self.vbo = list()
         ibo = list()
         for i in range(len(self.vertexes)):
@@ -149,12 +153,12 @@ class TeapotActor(object):
         self.ibo.bind()
         self.vbo.bind()
         GL.glEnableVertexAttribArray(0)  # vertex location
-        fsize = self.vbo.dtype.itemsize  # 4 bytes per float32
+        float_size = self.vbo.dtype.itemsize  # 4 bytes per float32
         GL.glVertexAttribPointer(0, 3, GL.GL_FLOAT, False,
-                                 6 * fsize, self.vbo + 0 * fsize)
+                                 6 * float_size, self.vbo + 0 * float_size)
         GL.glEnableVertexAttribArray(1)  # vertex normal
         GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False,
-                                 6 * fsize, self.vbo + 3 * fsize)
+                                 6 * float_size, self.vbo + 3 * float_size)
         vertex_shader = compileShader(
             """#version 450 core
             #line 161
@@ -195,10 +199,10 @@ class TeapotActor(object):
         self.shader = compileProgram(vertex_shader, fragment_shader)
         GL.glEnable(GL.GL_DEPTH_TEST)
 
-    def display_gl(self, modelview, projection):
+    def display_gl(self, model_view, projection):
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader)
-        m = rotate_x(glfw.get_time()) * modelview
+        m = self.model_matrix * model_view
         GL.glUniformMatrix4fv(0, 1, False, pack(projection))
         GL.glUniformMatrix4fv(1, 1, False, pack(m))
         GL.glDrawElements(GL.GL_TRIANGLES, self.element_count, GL.GL_UNSIGNED_SHORT, None)
@@ -212,12 +216,21 @@ class TeapotActor(object):
             self.vao = None
 
 
-def main():
-    from openvr.glframework.glfw_app import GlfwVrApp
-    with GlfwVrApp(actors=[TeapotActor(),]) as app:
-        app.run_loop()
+class TeapotActor(ObjActor):
+    def __init__(self):
+        src_folder = os.path.dirname(os.path.abspath(__file__))
+        obj_path = os.path.join(src_folder, 'wt_teapot.obj')
+        with open(obj_path) as fh:
+            super(TeapotActor, self).__init__(obj_stream=fh)
 
 
 if __name__ == "__main__":
-    main()
-
+    from openvr.glframework.glfw_app import GlfwVrApp
+    import glfw
+    teapot = TeapotActor()
+    s = 0.2  # size of teapot in meters
+    with GlfwVrApp(actors=[teapot, ]) as app:
+        while not glfw.window_should_close(app.window):
+            # scale teapot to original Melitta model aspect ratio
+            teapot.model_matrix = scale(s, s*4/3, s) * rotate_y(glfw.get_time())
+            app.render_scene()
