@@ -4,6 +4,7 @@ from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.GL.EXT.texture_filter_anisotropic import GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GL_TEXTURE_MAX_ANISOTROPY_EXT
 from PIL import Image
 
+from openvr.glframework import shader_string, shader_substring
 
 class PanoramaRaster(object):
     def __init__(self, img_path, texture_unit=0):
@@ -44,8 +45,7 @@ class PanoramaRaster(object):
 
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
-        return """
-            #line 49
+        return shader_substring("""
             layout(binding = %d) uniform sampler2D equirectangular_image;
             
             vec4 color_for_direction(in vec3 d) {
@@ -65,7 +65,7 @@ class PanoramaRaster(object):
                 
                 return textureGrad(equirectangular_image, tex_coord, dpdx, dpdy);
             }
-        """ % (self.texture_unit)
+        """ % self.texture_unit)
 
 
 class EquirectangularRaster(PanoramaRaster):
@@ -131,14 +131,13 @@ class CubeMapRaster(PanoramaRaster):
      
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
-        return """
-            #line 136
+        return shader_substring("""
             layout(binding = %d) uniform samplerCube cubemap_image;
-            
+
             vec4 color_for_direction(in vec3 d) {
                 return texture(cubemap_image, d);
             }
-        """ % (self.texture_unit)
+        """ % self.texture_unit)
 
 
 class SphericalPanorama(object):
@@ -154,9 +153,7 @@ class SphericalPanorama(object):
         self.raster.init_gl()
         # Set up shaders for rendering
         vertex_shader = compileShader(
-            """#version 450 core
-            #line 159
-            
+            shader_string("""
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
 
@@ -192,16 +189,14 @@ class SphericalPanorama(object):
                 vec4 camZ0 = xyzFromNdc * vec4(0, 0, 1, 0);
                 cameraZ = normalize(camZ0.xyz / camZ0.w);
             }
-            """,
+            """),
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
-            """#version 450 core
-            #line 196
-    
+            shader_string("""
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
             %s // raster implementation gets inserted here...
-            #line 200
+            #line 204
             
             // prototype to be defined by proxy geometry implementation
             // argument eye_location is in units of meters
@@ -209,7 +204,7 @@ class SphericalPanorama(object):
             // result direction is not necessarily normalized
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location);
             %s // proxy geometry implementation gets inserted here...
-            #line 208
+            #line 212
             
             in vec3 viewDir;
             in vec3 camPos;
@@ -220,7 +215,7 @@ class SphericalPanorama(object):
                 vec3 dir = adjusted_view_direction(viewDir, camPos);
                 pixelColor = color_for_direction(dir);
             }
-            """ % (self.raster.shader_fragment(), self.proxy_geometry.shader_fragment()),
+            """ % (self.raster.shader_fragment(), self.proxy_geometry.shader_fragment())),
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
@@ -253,13 +248,12 @@ class InfiniteBackground(object):
     For example the celestial sphere of stars and planets and other distant objects.
     """
     def shader_fragment(self):
-        return """
-            #line 253
+        return shader_substring("""
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
                 return local_view_direction; // there is no parallax at infinite distance
             }
-            """
+            """)
 
 
 class InfinitePlane(object):
@@ -272,8 +266,7 @@ class InfinitePlane(object):
     """
     def shader_fragment(self):
         p = self.plane_equation
-        return """
-            #line 272
+        return shader_substring("""
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
                 const vec4 plane_equation = vec4(%f, %f, %f, %f);
@@ -312,7 +305,7 @@ class InfinitePlane(object):
 
                 return d_par + d_orth; // reconstruct full view direction from two components
             }
-            """ % (p[0], p[1], p[2], p[3])
+            """ % (p[0], p[1], p[2], p[3]))
 
 
 if __name__ == "__main__":

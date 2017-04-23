@@ -12,7 +12,7 @@ from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.arrays import vbo
 
 from openvr.glframework.glmatrix import identity, pack, rotate_y, scale
-
+from openvr.glframework import shader_string
 
 class TriangleActor(object):
     def __init__(self):
@@ -160,9 +160,7 @@ class ObjActor(object):
         GL.glVertexAttribPointer(1, 3, GL.GL_FLOAT, False,
                                  6 * float_size, self.vbo + 3 * float_size)
         vertex_shader = compileShader(
-            """#version 450 core
-            #line 161
-
+            shader_string("""
             layout(location = 0) in vec3 in_Position;
             layout(location = 1) in vec3 in_Normal;
 
@@ -177,13 +175,10 @@ class ObjActor(object):
                 mat4 normal_matrix = transpose(inverse(model_view));
                 normal = normalize((normal_matrix * vec4(in_Normal, 0)).xyz);
             }
-            """,
+            """),
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
-            """#version 450 core
-            #line 181
-
-            in vec3 normal;
+            shader_string("""            in vec3 normal;
             out vec4 fragColor;
 
             vec4 color_by_normal(in vec3 n) {
@@ -194,7 +189,7 @@ class ObjActor(object):
             {
                 fragColor = color_by_normal(normal);
             }
-            """,
+            """),
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
         GL.glEnable(GL.GL_DEPTH_TEST)

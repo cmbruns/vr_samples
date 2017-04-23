@@ -21,8 +21,7 @@ if __name__ == "__main__":
     # 3) Teapot mesh
     teapot_actor = TeapotActor()
     s = 0.2  # size of teapot in meters
-    # 4) Controllers
-    # todo:
+    # 4) Controllers (see below)
 
     actors = [
         environment_actor,  # infinite sky
