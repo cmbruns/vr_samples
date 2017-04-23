@@ -1,3 +1,4 @@
+import numpy
 from OpenGL import GL
 from OpenGL.GL.shaders import compileShader, compileProgram
 from OpenGL.GL.EXT.texture_filter_anisotropic import GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GL_TEXTURE_MAX_ANISOTROPY_EXT
@@ -44,7 +45,7 @@ class PanoramaRaster(object):
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return """
-            #line 48
+            #line 49
             layout(binding = %d) uniform sampler2D equirectangular_image;
             
             vec4 color_for_direction(in vec3 d) {
@@ -131,7 +132,7 @@ class CubeMapRaster(PanoramaRaster):
     def shader_fragment(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return """
-            #line 135
+            #line 136
             layout(binding = %d) uniform samplerCube cubemap_image;
             
             vec4 color_for_direction(in vec3 d) {
@@ -145,6 +146,7 @@ class SphericalPanorama(object):
         self.raster = raster
         self.proxy_geometry = proxy_geometry
         self.vao = None
+        self.shader = None
     
     def init_gl(self):
         self.vao = GL.glGenVertexArrays(1)
@@ -153,12 +155,13 @@ class SphericalPanorama(object):
         # Set up shaders for rendering
         vertex_shader = compileShader(
             """#version 450 core
-            #line 157
+            #line 159
             
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
 
             out vec3 viewDir;
+            flat out vec3 cameraZ; // for reconstructing depth
             flat out vec3 camPos;
             
             // projected screen quad
@@ -186,12 +189,14 @@ class SphericalPanorama(object):
                 camPos = camPosFromModelView(model_view);
                 vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
                 viewDir = vpos.xyz/vpos.w - camPos;
+                vec4 camZ0 = xyzFromNdc * vec4(0, 0, 1, 0);
+                cameraZ = normalize(camZ0.xyz / camZ0.w);
             }
             """,
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 195
+            #line 196
     
             // prototype to be defined by raster implementation
             vec4 color_for_direction(in vec3 d);
@@ -221,6 +226,8 @@ class SphericalPanorama(object):
 
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
+        GL.glDepthRange(1, 1)  # Draw skybox at infinity...
+        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
         self.raster.display_gl()
         # print(modelview)
         # print(projection)
@@ -228,11 +235,15 @@ class SphericalPanorama(object):
         GL.glUniformMatrix4fv(1, 1, False, projection)
         GL.glUniformMatrix4fv(2, 1, False, modelview)
         GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
-        
+        # Restore earth depth behavior
+        GL.glDepthRange(0, 1)
+        GL.glDepthFunc(GL.GL_LESS)
+
     def dispose_gl(self):
         self.raster.dispose_gl()
-        GL.glDeleteVertexArrays(1, [self.vao,])
-        if self.shader is not None:
+        if self.vao:
+            GL.glDeleteVertexArrays(1, [self.vao,])
+        if self.shader:
             GL.glDeleteProgram(self.shader)
 
 
@@ -243,7 +254,7 @@ class InfiniteBackground(object):
     """
     def shader_fragment(self):
         return """
-            #line 247
+            #line 253
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
                 return local_view_direction; // there is no parallax at infinite distance
@@ -262,7 +273,7 @@ class InfinitePlane(object):
     def shader_fragment(self):
         p = self.plane_equation
         return """
-            #line 266
+            #line 272
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
                 const vec4 plane_equation = vec4(%f, %f, %f, %f);
@@ -271,7 +282,7 @@ class InfinitePlane(object):
                 // This approach gains numerical stability by never
                 // explicitly generating plane intersection points; especially
                 // near the horizon.
-                // Compute distance between plane and local viewpoint
+                // Compute perpendicular distance between plane and local viewpoint
                 float h1 = dot(vec4(eye_location, 1), plane_equation);
                 if (h1 < 0) 
                     discard; // current viewpoint is under the plane
@@ -294,6 +305,11 @@ class InfinitePlane(object):
                 vec3 dv_orth = dot(plane_equation.xyz, dv) * plane_equation.xyz;
                 vec3 dv_par = dv - dv_orth;
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
+
+                // todo: set gl_FragDepth...
+                // gl_FragDepth = 1.0;
+                // z-component of local view direction
+
                 return d_par + d_orth; // reconstruct full view direction from two components
             }
             """ % (p[0], p[1], p[2], p[3])
@@ -302,8 +318,7 @@ class InfinitePlane(object):
 if __name__ == "__main__":
     # Open equirectangular photosphere
     import os
-    
-    import numpy
+
     from openvr.glframework.glfw_app import GlfwApp
     from openvr.gl_renderer import OpenVrGlRenderer
 
