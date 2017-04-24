@@ -2,3 +2,5 @@
 /.pydevproject
 *.pyc
 /.idea
+/src/python/build
+/src/python/dist

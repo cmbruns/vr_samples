@@ -6,9 +6,12 @@ from PIL import Image
 
 
 class PanoramaRaster(object):
-    def __init__(self, img_path, texture_unit=0):
-        img = Image.open(img_path)
-        self.image = numpy.array(img)
+    def __init__(self, img_path=None, texture_unit=0, img_array=None):
+        if img_path and not img_array:
+            img = Image.open(img_path)
+            self.image = numpy.array(img)
+        else:
+            self.image = img_array
         self.texture_unit = texture_unit
         self.target = GL.GL_TEXTURE_2D
 
@@ -69,16 +72,16 @@ class PanoramaRaster(object):
 
 
 class EquirectangularRaster(PanoramaRaster):
-    def __init__(self, img_array, texture_unit=0):
-        super(EquirectangularRaster, self).__init__(img_array, texture_unit)
+    def __init__(self, *args, **kwargs):
+        super(EquirectangularRaster, self).__init__(*args, **kwargs)
         # Verify 2:1 aspect ratio
         shp = self.image.shape
         assert(shp[1] == 2 * shp[0])
     
 
 class CubeMapRaster(PanoramaRaster):
-    def __init__(self, img_array, texture_unit=0):
-        super(CubeMapRaster, self).__init__(img_array, texture_unit)
+    def __init__(self, *args, **kwargs):
+        super(CubeMapRaster, self).__init__(*args, **kwargs)
         # Verify 4:3 aspect ratio
         shp = self.image.shape
         tile = shp[0] / 3
