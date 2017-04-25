@@ -1,6 +1,9 @@
 import os
+import pkg_resources
 
 import glfw
+from PIL import Image
+import numpy
 
 from openvr.glframework.glfw_app import GlfwApp
 from openvr.glframework.glmatrix import rotate_y, scale
@@ -12,9 +15,10 @@ from vrprim.mesh.teapot import TeapotActor
 if __name__ == "__main__":
 
     # 1) Spherical panorama
-    src_folder = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(src_folder, '../../../assets/images/lauterbrunnen_cube.jpg')
-    raster = CubeMapRaster(img_path)
+    img_stream = pkg_resources.resource_stream('vrprim.photosphere', 'lauterbrunnen/cube.jpg')
+    img = Image.open(img_stream)
+    img_data = numpy.array(img)
+    raster = CubeMapRaster(img_array=img_data)
     environment_actor = SphericalPanorama(raster=raster, proxy_geometry=InfiniteBackground())
     # 2) Infinite ground plane
     ground_actor = SphericalPanorama(raster=raster, proxy_geometry=InfinitePlane(plane_equation=[0, 1, 0, -0.05]))
