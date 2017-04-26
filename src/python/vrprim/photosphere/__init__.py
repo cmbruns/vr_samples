@@ -381,13 +381,15 @@ class InfinitePlane(BasicShaderComponent):
                 vec3 dv_par = dv - dv_orth;
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
 
-                // todo: set gl_FragDepth...
-                vec3 intersection_in_world = intersect_line_and_plane(
-                        eye_location, 
-                        normalize(local_view_direction), 
-                        plane_equation);
-                vec4 intersection_in_eye = model_view * vec4(intersection_in_world, 1);
-                float depth = fragDepthFromEyeXyz(intersection_in_eye.xyz/intersection_in_eye.w, projection);
+                // set gl_FragDepth...
+                vec4 plane_in_eye = transpose(inverse(model_view)) * plane_equation;
+                vec4 view_direction_in_eye = model_view * vec4(local_view_direction, 0);
+                vec3 camera_in_eye = vec3(0, 0, 0);
+                vec3 intersection_in_eye = intersect_line_and_plane(
+                    camera_in_eye,
+                    view_direction_in_eye.xyz,
+                    plane_in_eye);
+                float depth = fragDepthFromEyeXyz(intersection_in_eye, projection);
                 gl_FragDepth = depth;
                 // z-component of local view direction
                 // float z_depth_in_eye = plane_intersection.z / plane_intersection.w;
