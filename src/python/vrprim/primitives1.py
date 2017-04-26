@@ -25,7 +25,8 @@ if __name__ == "__main__":
     # 3) Teapot mesh
     teapot_actor = TeapotActor()
     s = 0.2  # size of teapot in meters
-    # 4) Controllers (see below)
+    # 4) Controllers
+    # see loop below
 
     actors = [
         environment_actor,  # infinite sky
@@ -37,6 +38,6 @@ if __name__ == "__main__":
         controllers = TrackedDevicesActor(glfw_app.renderer.poses)
         renderer.append(controllers)
         while not glfw.window_should_close(glfw_app.window):
-            # scale teapot to original Melitta model aspect ratio
+            # scale teapot to original Melitta model aspect ratio, and spin over time
             teapot_actor.model_matrix = scale(s, s*4/3, s) * rotate_y(glfw.get_time())
             glfw_app.render_scene()

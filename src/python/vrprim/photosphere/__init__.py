@@ -6,7 +6,24 @@ from PIL import Image
 
 from openvr.glframework import shader_string, shader_substring
 
-class PanoramaRaster(object):
+class BasicShaderComponent(object):
+    def frag_shader_decl_substring(self):
+        return ""
+
+    def frag_shader_main_substring(self):
+        return ""
+
+    def vrtx_shader_decl_substring(self):
+        return ""
+
+    def vrtx_shader_main_substring(self):
+        return ""
+
+    def display_gl(self, gl_context=None):
+        pass
+
+
+class PanoramaRaster(BasicShaderComponent):
     def __init__(self, img_path=None, texture_unit=0, img_array=None):
         if img_path and not img_array:
             img = Image.open(img_path)
@@ -46,7 +63,7 @@ class PanoramaRaster(object):
     def dispose_gl(self):
         GL.glDeleteTextures([self.texture_handle,])            
 
-    def shader_fragment(self):
+    def frag_shader_decl_substring(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return shader_substring("""
             layout(binding = %d) uniform sampler2D equirectangular_image;
@@ -132,7 +149,7 @@ class CubeMapRaster(PanoramaRaster):
                 0, GL.GL_RGB8, sz, sz, 0, GL.GL_RGB, GL.GL_UNSIGNED_BYTE,
                 face_front)
      
-    def shader_fragment(self):
+    def frag_shader_decl_substring(self):
         "fragment of fragment-shader preamble needed to access pixels from this photosphere"
         return shader_substring("""
             layout(binding = %d) uniform samplerCube cubemap_image;
@@ -155,13 +172,14 @@ class SphericalPanorama(object):
         GL.glBindVertexArray(self.vao)
         self.raster.init_gl()
         # Set up shaders for rendering
-        vertex_shader = compileShader(
-            shader_string("""
+        shader_components = [self.raster, self.proxy_geometry]
+        decls = ''.join([a.vrtx_shader_decl_substring() for a in shader_components])
+        mains = ''.join([a.vrtx_shader_main_substring() for a in shader_components])
+        vertex_shader = compileShader(shader_string("""
             layout(location = 1) uniform mat4 projection = mat4(1);
             layout(location = 2) uniform mat4 model_view = mat4(1);
 
             out vec3 viewDir;
-            flat out vec3 cameraZ; // for reconstructing depth
             flat out vec3 camPos;
             
             // projected screen quad
@@ -180,6 +198,10 @@ class SphericalPanorama(object):
                 vec3 d = vec3(modelView[3]);
                 return -d * rot;
             }
+
+            // declarations from subshaders           
+            %s
+            #line 205
             
             void main() 
             {
@@ -189,25 +211,18 @@ class SphericalPanorama(object):
                 camPos = camPosFromModelView(model_view);
                 vec4 vpos = xyzFromNdc * SCREEN_QUAD[vertexIndex];
                 viewDir = vpos.xyz/vpos.w - camPos;
-                vec4 camZ0 = xyzFromNdc * vec4(0, 0, 1, 0);
-                cameraZ = normalize(camZ0.xyz / camZ0.w);
+                
+                // code from subshaders
+                %s
             }
-            """),
+            """ % (decls, mains)),
             GL.GL_VERTEX_SHADER)
-        fragment_shader = compileShader(
-            shader_string("""
-            // prototype to be defined by raster implementation
-            vec4 color_for_direction(in vec3 d);
-            %s // raster implementation gets inserted here...
-            #line 204
-            
-            // prototype to be defined by proxy geometry implementation
-            // argument eye_location is in units of meters
-            // argument local_view_direction need not be normalized
-            // result direction is not necessarily normalized
-            vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location);
-            %s // proxy geometry implementation gets inserted here...
-            #line 212
+        decls = ''.join([a.frag_shader_decl_substring() for a in shader_components])
+        mains = ''.join([a.frag_shader_main_substring() for a in shader_components])
+        fragment_shader = compileShader(shader_string("""
+            // declarations from shader components below
+            %s
+            #line 219
             
             in vec3 viewDir;
             in vec3 camPos;
@@ -215,27 +230,25 @@ class SphericalPanorama(object):
             
             void main() 
             {
+                // code from shader components below
+                %s
+                #line 229
+                
                 vec3 dir = adjusted_view_direction(viewDir, camPos);
                 pixelColor = color_for_direction(dir);
             }
-            """ % (self.raster.shader_fragment(), self.proxy_geometry.shader_fragment())),
+            """ % (decls, mains)),
             GL.GL_FRAGMENT_SHADER)
         self.shader = compileProgram(vertex_shader, fragment_shader)
 
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
-        GL.glDepthRange(1, 1)  # Draw skybox at infinity...
-        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
-        self.raster.display_gl()
-        # print(modelview)
-        # print(projection)
         GL.glUseProgram(self.shader)
+        self.raster.display_gl()
+        self.proxy_geometry.display_gl()
         GL.glUniformMatrix4fv(1, 1, False, projection)
         GL.glUniformMatrix4fv(2, 1, False, modelview)
         GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
-        # Restore earth depth behavior
-        GL.glDepthRange(0, 1)
-        GL.glDepthFunc(GL.GL_LESS)
 
     def dispose_gl(self):
         self.raster.dispose_gl()
@@ -245,12 +258,12 @@ class SphericalPanorama(object):
             GL.glDeleteProgram(self.shader)
 
 
-class InfiniteBackground(object):
+class InfiniteBackground(BasicShaderComponent):
     """
     Proxy geometry representing a spherical panorama at infinite distance.
     For example the celestial sphere of stars and planets and other distant objects.
     """
-    def shader_fragment(self):
+    def frag_shader_decl_substring(self):
         return shader_substring("""
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
@@ -258,23 +271,57 @@ class InfiniteBackground(object):
             }
             """)
 
+    def display_gl(self, gl_context=None):
+        GL.glDepthRange(1, 1)  # Draw skybox at infinity...
+        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
 
-class InfinitePlane(object):
+
+class InfinitePlane(BasicShaderComponent):
+    """
+    InfinitePlane represents a graphic infinite plane
+    todo: optional write to depth buffer (default True)
+    todo: optional antialiasing at the horizon (default True)
+    todo: optional texture coordinate generation
+    """
     def __init__(self, plane_equation=[0, 1, 0, 0]):
         self.plane_equation = plane_equation
+
+    def display_gl(self, gl_context=None):
+        GL.glDepthRange(0, 1)  # Use ordinary depth range
+        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
+
+    def vrtx_shader_decl_substring(self):
+        p = self.plane_equation
+        return shader_substring("""
+            const vec4 plane_in_world = vec4(%f, %f, %f, %f);
+
+            out vec4 intersection_in_clip; // location where view ray intersect the infinite plane, in clip coordinates
+        """ % (p[0], p[1], p[2], p[3]))
+
+    def vrtx_shader_main_substring(self):
+        return shader_substring("""
+            // Precompute values needed later for plane depth calculation in the fragment shader
+            // Clever homogeneous representation below includes linear denominator in w component.
+            vec4 intersection_in_world = vec4(
+                    cross(plane_in_world.xyz, cross(camPos, viewDir)) - plane_in_world.w * viewDir,  // xyz
+                    dot(plane_in_world.xyz, viewDir));  // w
+            intersection_in_clip = projection * model_view * intersection_in_world;
+        """)
     
     """
     Proxy geometry representing a spherical panorama at infinite distance.
     For example the celestial sphere of stars and planets and other distant objects.
     """
-    def shader_fragment(self):
+    def frag_shader_decl_substring(self):
         p = self.plane_equation
-        return shader_substring("""
+        return shader_substring("""          
+            const vec3 original_camera_position = vec3(0, 2, 0); // todo: pass in as uniform
+            const vec4 plane_equation = vec4(%f, %f, %f, %f);
+
+            in vec4 intersection_in_clip;
+
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
-                const vec4 plane_equation = vec4(%f, %f, %f, %f);
-                const vec3 original_camera_position = vec3(0, 2, 0); // todo: pass in as uniform
-
                 // This approach gains numerical stability by never
                 // explicitly generating plane intersection points; especially
                 // near the horizon.
@@ -302,13 +349,15 @@ class InfinitePlane(object):
                 vec3 dv_par = dv - dv_orth;
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
 
-                // todo: set gl_FragDepth...
-                // gl_FragDepth = 1.0;
-                // z-component of local view direction
-
                 return d_par + d_orth; // reconstruct full view direction from two components
             }
             """ % (p[0], p[1], p[2], p[3]))
+
+    def frag_shader_main_substring(self):
+        return shader_substring("""
+                // Compute z-distance to plane and populate depth z buffer
+                gl_FragDepth = (intersection_in_clip.z / intersection_in_clip.w + 1.0) / 2.0;
+        """)
 
 
 if __name__ == "__main__":
