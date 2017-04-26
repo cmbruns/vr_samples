@@ -383,12 +383,9 @@ class InfinitePlane(BasicShaderComponent):
 
                 // set gl_FragDepth...
                 vec4 plane_in_eye = transpose(inverse(model_view)) * plane_equation;
-                vec4 view_direction_in_eye = model_view * vec4(local_view_direction, 0);
-                vec3 camera_in_eye = vec3(0, 0, 0);
-                vec3 intersection_in_eye = intersect_line_and_plane(
-                    camera_in_eye,
-                    view_direction_in_eye.xyz,
-                    plane_in_eye);
+                vec3 view_direction_in_eye = (model_view * vec4(local_view_direction, 0)).xyz;
+                vec3 intersection_in_eye = -(plane_in_eye.w * view_direction_in_eye) / 
+                        dot(plane_in_eye.xyz, view_direction_in_eye);
                 float depth = fragDepthFromEyeXyz(intersection_in_eye, projection);
                 gl_FragDepth = depth;
                 // z-component of local view direction
