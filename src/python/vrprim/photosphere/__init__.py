@@ -325,32 +325,6 @@ class InfinitePlane(BasicShaderComponent):
             const vec4 plane_equation = vec4(%f, %f, %f, %f);
             flat in vec4 plane_intersection;
 
-            vec3 intersect_line_and_plane(in vec3 line_point, in vec3 line_direction, in vec4 plane)
-            {
-                // intersection of view direction and plane
-                // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
-                const vec3 w = plane.xyz;
-                const float e = plane.w;
-                vec3 l = line_direction;
-                vec3 m = cross(line_point, l);
-                return (cross(w, m) - e*l) / dot(w,l);
-            }
-            
-            float fragDepthFromEyeXyz(vec3 eyeXyz, mat4 projectionMatrix) {
-                // From http://stackoverflow.com/questions/10264949/glsl-gl-fragcoord-z-calculation-and-setting-gl-fragdepth
-                // NOTE: change far and near to constant 1.0 and 0.0 might be worth trying for performance optimization
-                float far=gl_DepthRange.far; // usually 1.0
-                float near=gl_DepthRange.near; // usually 0.0
-            
-                vec4 eye_space_pos = vec4(eyeXyz, 1);
-                vec4 clip_space_pos = projectionMatrix * eye_space_pos;
-                
-                float ndc_depth = clip_space_pos.z / clip_space_pos.w;
-                
-                float depth = (((far-near) * ndc_depth) + near + far) / 2.0;
-                return depth;
-            }
-
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
 
@@ -381,21 +355,14 @@ class InfinitePlane(BasicShaderComponent):
                 vec3 dv_par = dv - dv_orth;
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
 
-                // set gl_FragDepth...
+                // Compute z-distance to plane and populate depth z buffer
                 vec4 plane_in_eye = transpose(inverse(model_view)) * plane_equation;
-                vec3 view_direction_in_eye = (model_view * vec4(local_view_direction, 0)).xyz;
+                vec3 view_direction_in_eye = mat3(model_view) * local_view_direction;
                 vec3 intersection_in_eye = -(plane_in_eye.w * view_direction_in_eye) / 
                         dot(plane_in_eye.xyz, view_direction_in_eye);
-                float depth = fragDepthFromEyeXyz(intersection_in_eye, projection);
-                gl_FragDepth = depth;
-                // z-component of local view direction
-                // float z_depth_in_eye = plane_intersection.z / plane_intersection.w;
-                // vec4 z_depth_in_ndc = projection * vec4(0, 0, z_depth_in_eye, 1);
-                // float depth = z_depth_in_ndc.z / z_depth_in_ndc.w;
-                
-                if (depth < 0) discard;
-                if (depth > 1) depth = 1;
-                // gl_FragDepth = depth; // todo: not working yet
+                vec4 clip_space_pos = projection * vec4(intersection_in_eye, 1);
+                float ndc_depth = clip_space_pos.z / clip_space_pos.w;
+                gl_FragDepth = (ndc_depth + 1.0) / 2.0;
 
                 return d_par + d_orth; // reconstruct full view direction from two components
             }
