@@ -305,7 +305,7 @@ class InfinitePlane(BasicShaderComponent):
             // Precompute values needed later for plane depth calculation in the fragment shader
             // Clever homogeneous representation below includes linear denominator in w component.
             vec4 intersection_in_world = vec4(
-                    (cross(plane_in_world.xyz, cross(camPos, viewDir)) - plane_in_world.w * viewDir),  // xyz
+                    cross(plane_in_world.xyz, cross(camPos, viewDir)) - plane_in_world.w * viewDir,  // xyz
                     dot(plane_in_world.xyz, viewDir));  // w
             intersection_in_clip = projection * model_view * intersection_in_world;
         """)
