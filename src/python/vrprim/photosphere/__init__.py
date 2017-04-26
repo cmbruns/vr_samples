@@ -297,18 +297,20 @@ class InfinitePlane(BasicShaderComponent):
         return shader_substring("""
             const vec4 plane_in_world = vec4(%f, %f, %f, %f);
 
-            flat out vec4 plane_intersection;
+            out vec4 intersection_in_clip;
         """ % (p[0], p[1], p[2], p[3]))
 
     def vrtx_shader_main_substring(self):
         return shader_substring("""
-            mat4 eye_from_world = inverse(transpose(model_view));
-            vec4 plane_in_eye = eye_from_world * plane_in_world;
-            vec4 view_in_eye4 = model_view * vec4(viewDir, 0);
-            vec3 view_in_eye = view_in_eye4.xyz / view_in_eye4.w;
-            float w = -dot(plane_in_eye.xyz, view_in_eye) / plane_in_eye.w;
-            vec4 intersection_in_eye = vec4(view_in_eye, w);
-            plane_intersection = intersection_in_eye; // in ndc
+            // Precompute values needed later for plane depth calculation in the fragment shader
+            // Using eye space simplifies the calculation, because the ray passes through the origin (0,0,0)
+            vec4 plane_in_eye = transpose(inverse(model_view)) * plane_in_world;
+            vec3 view_direction_in_eye = mat3(model_view) * viewDir;
+            // Clever homogeneous representation below includes linear denominator in w component.
+            vec4 intersection_in_eye = vec4(
+                    -plane_in_eye.w * view_direction_in_eye, 
+                    dot(plane_in_eye.xyz, view_direction_in_eye));
+            intersection_in_clip = projection * intersection_in_eye;
         """)
     
     """
@@ -317,17 +319,14 @@ class InfinitePlane(BasicShaderComponent):
     """
     def frag_shader_decl_substring(self):
         p = self.plane_equation
-        return shader_substring("""
-            layout(location = 1) uniform mat4 projection = mat4(1);
-            layout(location = 2) uniform mat4 model_view = mat4(1);
-            
+        return shader_substring("""          
             const vec3 original_camera_position = vec3(0, 2, 0); // todo: pass in as uniform
             const vec4 plane_equation = vec4(%f, %f, %f, %f);
-            flat in vec4 plane_intersection;
+
+            in vec4 intersection_in_clip;
 
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
-
                 // This approach gains numerical stability by never
                 // explicitly generating plane intersection points; especially
                 // near the horizon.
@@ -355,18 +354,15 @@ class InfinitePlane(BasicShaderComponent):
                 vec3 dv_par = dv - dv_orth;
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
 
-                // Compute z-distance to plane and populate depth z buffer
-                vec4 plane_in_eye = transpose(inverse(model_view)) * plane_equation;
-                vec3 view_direction_in_eye = mat3(model_view) * local_view_direction;
-                vec3 intersection_in_eye = -(plane_in_eye.w * view_direction_in_eye) / 
-                        dot(plane_in_eye.xyz, view_direction_in_eye);
-                vec4 clip_space_pos = projection * vec4(intersection_in_eye, 1);
-                float ndc_depth = clip_space_pos.z / clip_space_pos.w;
-                gl_FragDepth = (ndc_depth + 1.0) / 2.0;
-
                 return d_par + d_orth; // reconstruct full view direction from two components
             }
             """ % (p[0], p[1], p[2], p[3]))
+
+    def frag_shader_main_substring(self):
+        return shader_substring("""
+                // Compute z-distance to plane and populate depth z buffer
+                gl_FragDepth = (intersection_in_clip.z / intersection_in_clip.w + 1.0) / 2.0;
+        """)
 
 
 if __name__ == "__main__":
