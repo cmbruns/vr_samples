@@ -19,6 +19,9 @@ class BasicShaderComponent(object):
     def vrtx_shader_main_substring(self):
         return ""
 
+    def display_gl(self, gl_context=None):
+        pass
+
 
 class PanoramaRaster(BasicShaderComponent):
     def __init__(self, img_path=None, texture_unit=0, img_array=None):
@@ -242,18 +245,12 @@ class SphericalPanorama(object):
 
     def display_gl(self, modelview, projection):
         GL.glBindVertexArray(self.vao)
-        GL.glDepthRange(1, 1)  # Draw skybox at infinity...
-        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
-        self.raster.display_gl()
-        # print(modelview)
-        # print(projection)
         GL.glUseProgram(self.shader)
+        self.raster.display_gl()
+        self.proxy_geometry.display_gl()
         GL.glUniformMatrix4fv(1, 1, False, projection)
         GL.glUniformMatrix4fv(2, 1, False, modelview)
         GL.glDrawArrays(GL.GL_TRIANGLE_STRIP, 0, 4)
-        # Restore earth depth behavior
-        GL.glDepthRange(0, 1)
-        GL.glDepthFunc(GL.GL_LESS)
 
     def dispose_gl(self):
         self.raster.dispose_gl()
@@ -276,10 +273,24 @@ class InfiniteBackground(BasicShaderComponent):
             }
             """)
 
+    def display_gl(self, gl_context=None):
+        GL.glDepthRange(1, 1)  # Draw skybox at infinity...
+        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
+
 
 class InfinitePlane(BasicShaderComponent):
+    """
+    InfinitePlane represents a graphic infinite plane
+    todo: optional write to depth buffer (default True)
+    todo: optional antialiasing at the horizon (default True)
+    todo: optional texture coordinate generation
+    """
     def __init__(self, plane_equation=[0, 1, 0, 0]):
         self.plane_equation = plane_equation
+
+    def display_gl(self, gl_context=None):
+        GL.glDepthRange(0, 1)  # Use ordinary depth range
+        GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
 
     def vrtx_shader_decl_substring(self):
         p = self.plane_equation
@@ -308,9 +319,37 @@ class InfinitePlane(BasicShaderComponent):
         p = self.plane_equation
         return shader_substring("""
             layout(location = 1) uniform mat4 projection = mat4(1);
+            layout(location = 2) uniform mat4 model_view = mat4(1);
+            
             const vec3 original_camera_position = vec3(0, 2, 0); // todo: pass in as uniform
             const vec4 plane_equation = vec4(%f, %f, %f, %f);
             flat in vec4 plane_intersection;
+
+            vec3 intersect_line_and_plane(in vec3 line_point, in vec3 line_direction, in vec4 plane)
+            {
+                // intersection of view direction and plane
+                // http://math.stackexchange.com/questions/400268/equation-for-a-line-through-a-plane-in-homogeneous-coordinates
+                const vec3 w = plane.xyz;
+                const float e = plane.w;
+                vec3 l = line_direction;
+                vec3 m = cross(line_point, l);
+                return (cross(w, m) - e*l) / dot(w,l);
+            }
+            
+            float fragDepthFromEyeXyz(vec3 eyeXyz, mat4 projectionMatrix) {
+                // From http://stackoverflow.com/questions/10264949/glsl-gl-fragcoord-z-calculation-and-setting-gl-fragdepth
+                // NOTE: change far and near to constant 1.0 and 0.0 might be worth trying for performance optimization
+                float far=gl_DepthRange.far; // usually 1.0
+                float near=gl_DepthRange.near; // usually 0.0
+            
+                vec4 eye_space_pos = vec4(eyeXyz, 1);
+                vec4 clip_space_pos = projectionMatrix * eye_space_pos;
+                
+                float ndc_depth = clip_space_pos.z / clip_space_pos.w;
+                
+                float depth = (((far-near) * ndc_depth) + near + far) / 2.0;
+                return depth;
+            }
 
             vec3 adjusted_view_direction(in vec3 local_view_direction, in vec3 eye_location)
             {
@@ -343,11 +382,17 @@ class InfinitePlane(BasicShaderComponent):
                 d_par += dv_par * (length(d_orth) / h0); // converts from meters to whatever units view direction has
 
                 // todo: set gl_FragDepth...
-                // gl_FragDepth = 1.0;
+                vec3 intersection_in_world = intersect_line_and_plane(
+                        eye_location, 
+                        normalize(local_view_direction), 
+                        plane_equation);
+                vec4 intersection_in_eye = model_view * vec4(intersection_in_world, 1);
+                float depth = fragDepthFromEyeXyz(intersection_in_eye.xyz/intersection_in_eye.w, projection);
+                gl_FragDepth = depth;
                 // z-component of local view direction
-                float z_depth_in_eye = plane_intersection.z / plane_intersection.w;
-                vec4 z_depth_in_ndc = projection * vec4(0, 0, z_depth_in_eye, 1);
-                float depth = z_depth_in_ndc.z / z_depth_in_ndc.w;
+                // float z_depth_in_eye = plane_intersection.z / plane_intersection.w;
+                // vec4 z_depth_in_ndc = projection * vec4(0, 0, z_depth_in_eye, 1);
+                // float depth = z_depth_in_ndc.z / z_depth_in_ndc.w;
                 
                 if (depth < 0) discard;
                 if (depth > 1) depth = 1;
