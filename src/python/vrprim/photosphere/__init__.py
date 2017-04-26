@@ -297,20 +297,17 @@ class InfinitePlane(BasicShaderComponent):
         return shader_substring("""
             const vec4 plane_in_world = vec4(%f, %f, %f, %f);
 
-            out vec4 intersection_in_clip;
+            out vec4 intersection_in_clip; // location where view ray intersect the infinite plane, in clip coordinates
         """ % (p[0], p[1], p[2], p[3]))
 
     def vrtx_shader_main_substring(self):
         return shader_substring("""
             // Precompute values needed later for plane depth calculation in the fragment shader
-            // Using eye space simplifies the calculation, because the ray passes through the origin (0,0,0)
-            vec4 plane_in_eye = transpose(inverse(model_view)) * plane_in_world;
-            vec3 view_direction_in_eye = mat3(model_view) * viewDir;
             // Clever homogeneous representation below includes linear denominator in w component.
-            vec4 intersection_in_eye = vec4(
-                    -plane_in_eye.w * view_direction_in_eye, 
-                    dot(plane_in_eye.xyz, view_direction_in_eye));
-            intersection_in_clip = projection * intersection_in_eye;
+            vec4 intersection_in_world = vec4(
+                    (cross(plane_in_world.xyz, cross(camPos, viewDir)) - plane_in_world.w * viewDir),  // xyz
+                    dot(plane_in_world.xyz, viewDir));  // w
+            intersection_in_clip = projection * model_view * intersection_in_world;
         """)
     
     """
