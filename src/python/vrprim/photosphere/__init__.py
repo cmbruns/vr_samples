@@ -6,6 +6,7 @@ from PIL import Image
 
 from openvr.glframework import shader_string, shader_substring
 
+
 class BasicShaderComponent(object):
     def frag_shader_decl_substring(self):
         return ""
@@ -32,6 +33,7 @@ class PanoramaRaster(BasicShaderComponent):
             self.image = img_array
         self.texture_unit = texture_unit
         self.target = GL.GL_TEXTURE_2D
+        self.texture_handle = None
 
     def _upload_texture(self):
         GL.glTexParameteri(self.target, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT)
@@ -51,7 +53,7 @@ class PanoramaRaster(BasicShaderComponent):
     def init_gl(self):
         self.texture_handle = GL.glGenTextures(1)
         GL.glBindTexture(self.target, self.texture_handle)
-        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_NEAREST)
+        GL.glTexParameteri(self.target, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
         GL.glTexParameteri(self.target, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR_MIPMAP_LINEAR)
         self._upload_texture()
         GL.glGenerateMipmap(self.target)
@@ -64,7 +66,9 @@ class PanoramaRaster(BasicShaderComponent):
         GL.glDeleteTextures([self.texture_handle,])            
 
     def frag_shader_decl_substring(self):
-        "fragment of fragment-shader preamble needed to access pixels from this photosphere"
+        """
+        fragment of fragment-shader preamble needed to access pixels from this photosphere
+        """
         return shader_substring("""
             layout(binding = %d) uniform sampler2D equirectangular_image;
             
@@ -230,12 +234,14 @@ class SphericalPanorama(object):
             
             void main() 
             {
+                float opacity = 1.0;
+
                 // code from shader components below
                 %s
                 #line 229
                 
                 vec3 dir = adjusted_view_direction(viewDir, camPos);
-                pixelColor = color_for_direction(dir);
+                pixelColor = vec4(color_for_direction(dir).rgb, opacity);
             }
             """ % (decls, mains)),
             GL.GL_FRAGMENT_SHADER)
@@ -283,10 +289,14 @@ class InfinitePlane(BasicShaderComponent):
     todo: optional antialiasing at the horizon (default True)
     todo: optional texture coordinate generation
     """
-    def __init__(self, plane_equation=[0, 1, 0, 0]):
+    def __init__(self, plane_equation=(0, 1, 0, 0)):
         self.plane_equation = plane_equation
+        self.do_anti_alias_horizon = True
 
     def display_gl(self, gl_context=None):
+        if self.do_anti_alias_horizon:
+            GL.glEnable(GL.GL_BLEND)
+            GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA)
         GL.glDepthRange(0, 1)  # Use ordinary depth range
         GL.glDepthFunc(GL.GL_LEQUAL)  # ...but paint over other infinitely distant things, such as the result of glClear
 
@@ -327,13 +337,15 @@ class InfinitePlane(BasicShaderComponent):
                 // near the horizon.
                 // Compute perpendicular distance between plane and local viewpoint
                 float h1 = dot(vec4(eye_location, 1), plane_equation);
+                /*
                 if (h1 < 0) 
                     discard; // current viewpoint is under the plane
                 float discrim = dot(plane_equation.xyz, local_view_direction);
                 if (discrim > 0)
                     discard; // view direction does not intersect the plane
+                    */
                 // component of view direction orthogonal to plane
-                vec3 d_orth = discrim * plane_equation.xyz;
+                vec3 d_orth = dot(plane_equation.xyz, local_view_direction) * plane_equation.xyz;
                 // component of view direction parallel to plane
                 vec3 d_par = local_view_direction - d_orth;
                 // 1) First scale view vector by relative distance from plane.
@@ -357,7 +369,22 @@ class InfinitePlane(BasicShaderComponent):
         return shader_substring("""
                 // Compute z-distance to plane and populate depth z buffer
                 gl_FragDepth = (intersection_in_clip.z / intersection_in_clip.w + 1.0) / 2.0;
-        """)
+
+                // anti aliasing
+                float discrim = -dot(plane_equation.xyz, viewDir);
+                const bool do_anti_alias_horizon = %s;
+                if (do_anti_alias_horizon) {
+                    float horizon_pixel = 2.0 * discrim / fwidth(discrim);
+                    opacity = smoothstep(0.0, 1.0, 0.5 * (horizon_pixel + 1.0));
+                    if (opacity <= 0.0)
+                        discard;
+                    opacity = clamp(opacity, 0, 1);
+                }
+                else {
+                    if (discrim < 0)
+                        discard;
+                }
+        """ % ('true' if self.do_anti_alias_horizon else 'false'))
 
 
 if __name__ == "__main__":
