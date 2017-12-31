@@ -45,7 +45,7 @@ class SphereProgram(object):
             padded clip slab plus final fragment clipping
        """
 
-    def __init__(self, default_radius=0.2):
+    def __init__(self, default_radius=0.5):
         self.default_radius = default_radius
         self.sphere_center_location = 1
         self.model_view_location = 2
@@ -76,12 +76,12 @@ class SphereProgram(object):
             #version 450 core
             #line 78
             // Vertex shader for sphere imposters
-            layout(location = %d) uniform mat4 view_matrix = mat4(1);
+            layout(location = %d) uniform mat4 modelviewMatrix = mat4(1);
             layout(location = %d) in vec3 sphere_center;
             void main() 
             {
                 // NOTE: projection is deferred to the geometry shader
-                gl_Position = view_matrix * vec4(sphere_center, 1);
+                gl_Position = modelviewMatrix * vec4(sphere_center, 1);
             }\
             """ % (self.model_view_location, self.sphere_center_location))
         return vertex_shader
@@ -93,21 +93,9 @@ class SphereProgram(object):
             #line 94
             // Geometry shader for sphere imposters
             layout(points) in;
-            layout(triangle_strip, max_vertices=10) out; // viewer-facing half-cube imposter geometry
+            layout(triangle_strip, max_vertices=20) out; // viewer-facing half-cube imposter geometry
 
-            const float sz = 1;
-            const float r = sz;
-            const float l = -sz;
-            const float t = sz;
-            const float b = -sz;
-            const float n = 1;
-            const float f = 5;
-            layout(location = %d) uniform mat4 projectionMatrix = 
-                mat4( // mat4(1);
-                    2/(r-l), 0, 0, -(r+l)/(r-l),
-                    0, 2/(t-b), 0, -(t+b)/(t-b),
-                    0, 0, -2/(f-n), -(f+n)/(f-n),
-                    0, 0, 0, 1);
+            layout(location = %d) uniform mat4 projectionMatrix;
             
             const float radius = %s;
             // Spatially linear parameters can be computed per-vertex, and correctly interpolated per-fragment,
@@ -118,15 +106,13 @@ class SphereProgram(object):
                 vec3 p; // imposter position - linear
                 float c2; // cee squared - constant
                 float pc; // pos dot center - linear
-            } linpar;
-            void emit_one_vertex(in vec3 offset) {
-                // Because we always view the cube on-corner, we can afford to trim the bounding geometry a bit,
-                // to reduce overdraw
-                const float trim = 0.72; // 0.70 = aggressive trim, determined empirically
-                vec3 center = linpar.c;
-                linpar.p = linpar.c + trim * radius * offset;
-                gl_Position = projectionMatrix * vec4(linpar.p, 1);
-                linpar.pc = dot(linpar.p, linpar.c);
+            } lp;
+            void emit_one_vertex(in vec3 offset, in float trim) 
+            {
+                vec3 center = lp.c;
+                lp.p = lp.c + trim * radius * offset;
+                gl_Position = projectionMatrix * vec4(lp.p, 1);
+                lp.pc = dot(lp.p, lp.c);
                 EmitVertex();
             }
             // Create a bounding cube, with one corner oriented toward the viewer.
@@ -178,29 +164,70 @@ class SphereProgram(object):
             void main() 
             {
                 vec4 posIn = gl_in[0].gl_Position;
-                linpar.c = posIn.xyz/posIn.w; // sphere center is constant for all vertices
-                linpar.c2 = dot(linpar.c, linpar.c) - radius*radius; // 2*c coefficient is constant for all vertices
+                lp.c = posIn.xyz/posIn.w; // sphere center is constant for all vertices
+                lp.c2 = dot(lp.c, lp.c) - radius*radius; // 2*c coefficient is constant for all vertices
+                
+                // Use different optimizations depending on how close the sphere is to the viewer
+                // todo: make this optional
+                float rd2 = radius * radius  / dot(lp.c, lp.c);
+                mat3 locrot = mat3(1);
+                float trim = 1.0;
+                if (rd2 < 0.06) {
+                    // Because we always view the cube on-corner, we can afford to trim the bounding geometry a bit,
+                    // to reduce overdraw
+                    trim = 0.75;
+                    // To help minimize overdraw, rotate local coordinate system so -Z is along eye->center axis
+                    vec3 zhat = normalize(-lp.c);
+                    vec3 xhat = normalize(cross(vec3(0,1,0), zhat));
+                    vec3 yhat = cross(zhat, xhat);
+                    locrot = mat3(xhat, yhat, zhat);
+                }
+                
                 // Use BACK faces for imposter geometry, just in case the viewpoint
                 // is inside the sphere bounding box
                 // imposter behind sphere (10 vertices)
+                
                 // Half cube can be constructed using 2 triangle strips,
                 // each with 3 triangles
                 // First strip: 2-3-8-4-5
-                emit_one_vertex(p2);
-                emit_one_vertex(p3);
-                emit_one_vertex(p8);
-                emit_one_vertex(p4);
-                emit_one_vertex(p5);
+                emit_one_vertex(locrot * p2, trim);
+                emit_one_vertex(locrot * p3, trim);
+                emit_one_vertex(locrot * p8, trim);
+                emit_one_vertex(locrot * p4, trim);
+                emit_one_vertex(locrot * p5, trim);
                 EndPrimitive();
                 // Second strip: 5-6-8-7-2
-                emit_one_vertex(p5);
-                emit_one_vertex(p6);
-                emit_one_vertex(p8);
-                emit_one_vertex(p7);
-                emit_one_vertex(p2);
+                emit_one_vertex(locrot * p5, trim);
+                emit_one_vertex(locrot * p6, trim);
+                emit_one_vertex(locrot * p8, trim);
+                emit_one_vertex(locrot * p7, trim);
+                emit_one_vertex(locrot * p2, trim);
                 EndPrimitive();
+
+                // Viewpoint might be inside bounding cube, in which case we need to draw all the faces
+                // Helps with large spheres
+                // todo: make this optional
+                if (rd2 > 1.0/3.0) 
+                {
+                    // third strip: 7-2-1-3-4
+                    emit_one_vertex(locrot * p7, trim);
+                    emit_one_vertex(locrot * p2, trim);
+                    emit_one_vertex(locrot * p1, trim);
+                    emit_one_vertex(locrot * p3, trim);
+                    emit_one_vertex(locrot * p4, trim);
+                    EndPrimitive();
+                    // fourth strip: 4-5-1-6-7
+                    emit_one_vertex(locrot * p4, trim);
+                    emit_one_vertex(locrot * p5, trim);
+                    emit_one_vertex(locrot * p1, trim);
+                    emit_one_vertex(locrot * p6, trim);
+                    emit_one_vertex(locrot * p7, trim);
+                    EndPrimitive();
+                }
              }\
-            """ % (self.projection_location, self.default_radius))
+            """ % (
+                self.projection_location,
+                self.default_radius))
         return geometry_shader
 
     def get_fragment_shader(self):
@@ -215,13 +242,17 @@ class SphereProgram(object):
                 vec3 p; // imposter position - linear
                 float c2; // cee squared - constant
                 float pc; // pos dot center - linear
-            } linpar;
-            const vec4 sphere_color = vec4(0, 1, 0, 1); // default to blue
+            } lp;
+            const vec4 sphere_color = vec4(0, 0.1, 1, 1); // default to blue
             out vec4 frag_color;
             void main() 
             {
                 // TODO: cull missed rays
-                frag_color = sphere_color; // flat shading
+                float a2 = dot(lp.p, lp.p);
+                float discriminant = lp.pc*lp.pc - a2*lp.c2;
+                
+                if (discriminant < 0) frag_color = vec4(0, 0, 0, 1);
+                else frag_color = vec4(0, 1, 0, 1); // flat shading
             }\
             """ % ())
         return fragment_shader
