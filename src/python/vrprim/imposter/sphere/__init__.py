@@ -237,7 +237,7 @@ class SphereActor(object):
         self.vao = None
         if vbos is None:
             # Create on vertex buffer object
-            self.vbos = [VBO(numpy.array([0, 1, 0], 'f')), ]
+            self.vbos = [VBO(numpy.array([0, 1.5, 0], dtype='f')), ]
 
     def init_gl(self):
         self.shader.init_gl()
@@ -246,23 +246,18 @@ class SphereActor(object):
             pass
 
     def display_gl(self, model_view, projection):
-        # todo: this is testing only
-        mv = numpy.array(model_view)
-        mv = translate((0, 1, 0)) @ model_view
-        # end test
         GL.glBindVertexArray(self.vao)
         GL.glUseProgram(self.shader.program_handle)
         GL.glUniformMatrix4fv(self.shader.model_view_location, 1, False,
-                              pack(mv))
+                              pack(model_view))
         GL.glUniformMatrix4fv(self.shader.projection_location, 1, False,
                               pack(projection))
         for vbo in self.vbos:
             vbo.bind()
             xyzloc = self.shader.sphere_center_location
             GL.glEnableVertexAttribArray(xyzloc)
-            GL.glVertexAttribPointer(xyzloc, 3, GL.GL_FLOAT, False, 0, 0)
+            GL.glVertexAttribPointer(xyzloc, 3, GL.GL_FLOAT, False, 0, None)
             GL.glDrawArrays(GL.GL_POINTS, 0, 1)
-        # TODO:
 
     def dispose_gl(self):
         self.shader.dispose_gl()
