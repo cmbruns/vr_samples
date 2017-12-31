@@ -28,14 +28,14 @@ if __name__ == "__main__":
     s = 0.2  # size of teapot in meters
     # 4) Controllers
     # see loop below
-    # todo: imposter sphere
-    sphere_actor = SphereActor()
+    # 5) imposter sphere
+    # sphere_actor = SphereActor()
 
     actors = [
         environment_actor,  # infinite sky
         ground_actor,  # parallax corrected ground plane
-        # teapot_actor,
-        sphere_actor,
+        teapot_actor,
+        SphereActor(),  # imposter sphere
     ]
     renderer = OpenVrGlRenderer(actors, multisample=4)
     with GlfwApp(renderer, "photosphere test") as glfw_app:

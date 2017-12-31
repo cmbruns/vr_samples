@@ -45,7 +45,7 @@ class SphereProgram(object):
             padded clip slab plus final fragment clipping
        """
 
-    def __init__(self, default_radius=0.5):
+    def __init__(self, default_radius=0.2):
         self.default_radius = default_radius
         self.sphere_center_location = 1
         self.model_view_location = 2
@@ -172,7 +172,8 @@ class SphereProgram(object):
                 float rd2 = radius * radius  / dot(lp.c, lp.c);
                 mat3 locrot = mat3(1);
                 float trim = 1.0;
-                if (rd2 < 0.06) {
+                const float critical_rd2 = 0.06;
+                if (rd2 <= critical_rd2) { // sphere is far away, so carefully orient and trim the bounding box
                     // Because we always view the cube on-corner, we can afford to trim the bounding geometry a bit,
                     // to reduce overdraw
                     trim = 0.75;
@@ -207,7 +208,7 @@ class SphereProgram(object):
                 // Viewpoint might be inside bounding cube, in which case we need to draw all the faces
                 // Helps with large spheres
                 // todo: make this optional
-                if (rd2 > 1.0/3.0) 
+                if (rd2 > critical_rd2) 
                 {
                     // third strip: 7-2-1-3-4
                     emit_one_vertex(locrot * p7, trim);
@@ -234,8 +235,9 @@ class SphereProgram(object):
         fragment_shader = textwrap.dedent(
             """\
             #version 450 core
-            #line 212
+            #line 239
             // Fragment shader for sphere imposters
+            
             in LinearParameters
             {
                 vec3 c; // sphere center - constant
@@ -243,16 +245,25 @@ class SphereProgram(object):
                 float c2; // cee squared - constant
                 float pc; // pos dot center - linear
             } lp;
-            const vec4 sphere_color = vec4(0, 0.1, 1, 1); // default to blue
+            
             out vec4 frag_color;
+            
             void main() 
             {
-                // TODO: cull missed rays
+                const vec4 sphere_color = vec4(0, 0.1, 1, 1);
+                // cull missed rays
                 float a2 = dot(lp.p, lp.p);
                 float discriminant = lp.pc*lp.pc - a2*lp.c2;
-                
-                if (discriminant < 0) frag_color = vec4(0, 0, 0, 1);
-                else frag_color = vec4(0, 1, 0, 1); // flat shading
+                float dd = 0.5 * fwidth(discriminant);  // antialiasing
+                if (discriminant < -dd) 
+                    discard;
+                else if (discriminant > dd)
+                    frag_color = sphere_color; // flat shading
+                else {
+                    // antialiasing
+                    float blend = smoothstep(-dd, dd, discriminant);
+                    frag_color = vec4(sphere_color.rgb, blend);
+                }
             }\
             """ % ())
         return fragment_shader
