@@ -14,6 +14,7 @@ from OpenGL.arrays import vbo
 from openvr.glframework.glmatrix import identity, pack, rotate_y, scale
 from openvr.glframework import shader_string
 
+
 class TriangleActor(object):
     def __init__(self):
         self.vao = None
@@ -45,7 +46,7 @@ class TriangleActor(object):
         # Create GLSL shader program
         vertex_shader = compileShader(
             """#version 450 core
-            #line 45
+            #line 50
             
             layout(location = %d) uniform mat4 MVP = mat4(1);
             
@@ -63,7 +64,7 @@ class TriangleActor(object):
             GL.GL_VERTEX_SHADER)
         fragment_shader = compileShader(
             """#version 450 core
-            #line 63
+            #line 68
     
             in vec3 color;
             out vec4 fragColor;

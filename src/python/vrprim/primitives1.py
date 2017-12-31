@@ -11,6 +11,7 @@ from openvr.gl_renderer import OpenVrGlRenderer
 from openvr.tracked_devices_actor import TrackedDevicesActor
 from vrprim.photosphere import SphericalPanorama, CubeMapRaster, InfiniteBackground, InfinitePlane
 from vrprim.mesh.teapot import TeapotActor
+from vrprim.imposter.sphere import SphereActor
 
 if __name__ == "__main__":
 
@@ -27,17 +28,21 @@ if __name__ == "__main__":
     s = 0.2  # size of teapot in meters
     # 4) Controllers
     # see loop below
+    # todo: imposter sphere
+    sphere_actor = SphereActor()
 
     actors = [
         environment_actor,  # infinite sky
         ground_actor,  # parallax corrected ground plane
-        teapot_actor,
+        # teapot_actor,
+        sphere_actor,
     ]
     renderer = OpenVrGlRenderer(actors, multisample=4)
     with GlfwApp(renderer, "photosphere test") as glfw_app:
         controllers = TrackedDevicesActor(glfw_app.renderer.poses)
         renderer.append(controllers)
         while not glfw.window_should_close(glfw_app.window):
-            # scale teapot to original Melitta model aspect ratio, and spin over time
+            # scale teapot to original Melitta model aspect ratio,
+            # and spin over time
             teapot_actor.model_matrix = scale(s, s*4/3, s) * rotate_y(glfw.get_time())
             glfw_app.render_scene()
