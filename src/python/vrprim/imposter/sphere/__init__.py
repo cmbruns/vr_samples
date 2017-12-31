@@ -106,7 +106,9 @@ class SphereProgram(object):
                 vec3 p; // imposter position - linear
                 float c2; // cee squared - constant
                 float pc; // pos dot center - linear
+                float radius;
             } lp;
+            
             void emit_one_vertex(in vec3 offset, in float trim) 
             {
                 vec3 center = lp.c;
@@ -115,6 +117,7 @@ class SphereProgram(object):
                 lp.pc = dot(lp.p, lp.c);
                 EmitVertex();
             }
+            
             // Create a bounding cube, with one corner oriented toward the viewer.
             // Rotate cube of size 2, so that corner 1,1,1 points toward +Z
             // First rotate -45 degrees about Y axis, to orient +XZ edge toward +Z
@@ -166,6 +169,7 @@ class SphereProgram(object):
                 vec4 posIn = gl_in[0].gl_Position;
                 lp.c = posIn.xyz/posIn.w; // sphere center is constant for all vertices
                 lp.c2 = dot(lp.c, lp.c) - radius*radius; // 2*c coefficient is constant for all vertices
+                lp.radius = radius;
                 
                 // Use different optimizations depending on how close the sphere is to the viewer
                 // todo: make this optional
@@ -238,34 +242,58 @@ class SphereProgram(object):
             #line 239
             // Fragment shader for sphere imposters
             
+            layout(location = %d) uniform mat4 modelviewMatrix = mat4(1);
+            layout(location = %d) uniform mat4 projectionMatrix = mat4(1);
+
             in LinearParameters
             {
                 vec3 c; // sphere center - constant
                 vec3 p; // imposter position - linear
                 float c2; // cee squared - constant
                 float pc; // pos dot center - linear
+                float radius;
             } lp;
             
             out vec4 frag_color;
             
             void main() 
             {
-                const vec4 sphere_color = vec4(0, 0.1, 1, 1);
-                // cull missed rays
+                // cull missed rays and antialias
                 float a2 = dot(lp.p, lp.p);
                 float discriminant = lp.pc*lp.pc - a2*lp.c2;
-                float dd = 0.5 * fwidth(discriminant);  // antialiasing
-                if (discriminant < -dd) 
-                    discard;
-                else if (discriminant > dd)
-                    frag_color = sphere_color; // flat shading
-                else {
-                    // antialiasing
-                    float blend = smoothstep(-dd, dd, discriminant);
-                    frag_color = vec4(sphere_color.rgb, blend);
+                float dd = fwidth(discriminant);  // antialiasing
+                float opacity = 1.0;
+                if (discriminant < 0) {
+                    discard;  // cull missed rays
                 }
+                else if (discriminant < dd) {
+                    // antialiasing
+                    opacity = smoothstep(0, dd, discriminant);
+                }
+                
+                // compute surface position and normal
+                float left = lp.pc / a2; // left half of quadratic formula: -b/2a
+                float right = sqrt(discriminant) / a2; // (negative) right half of quadratic formula: sqrt(b^2-4ac)/2a
+                float alpha1 = left - right; // near/front surface of sphere
+                vec3 s = alpha1 * lp.p;  // sphere surface in camera coordinates
+                vec3 normal = 1.0 / lp.radius * (s - lp.c);
+                // todo: convert normal to world frame
+                mat3 world_from_eye = transpose(mat3(modelviewMatrix));
+                normal = world_from_eye * normal;
+
+                vec3 normal_color = 0.5 * (normal + vec3(1));
+
+                const vec3 sphere_color = vec3(0, 0.1, 1);
+
+                frag_color = vec4(normal_color, opacity);
+                
+                // Set depth correctly
+                // todo: make this optional
+                vec4 clip = projectionMatrix * vec4(s, 1);
+                float ndc_depth = clip.z / clip.w;
+                gl_FragDepth = 0.5 * (ndc_depth + 1);
             }\
-            """ % ())
+            """ % (self.model_view_location, self.projection_location))
         return fragment_shader
 
 

@@ -28,8 +28,6 @@ if __name__ == "__main__":
     s = 0.2  # size of teapot in meters
     # 4) Controllers
     # see loop below
-    # 5) imposter sphere
-    # sphere_actor = SphereActor()
 
     actors = [
         environment_actor,  # infinite sky
