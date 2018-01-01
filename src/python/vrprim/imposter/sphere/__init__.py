@@ -76,13 +76,15 @@ class SphereProgram(object):
             #version 450 core
             #line 78
             // Vertex shader for sphere imposters
+            
             layout(location = %d) uniform mat4 modelviewMatrix = mat4(1);
             layout(location = %d) in vec3 sphere_center;
+            
             void main() 
             {
                 // NOTE: projection is deferred to the geometry shader
                 gl_Position = modelviewMatrix * vec4(sphere_center, 1);
-            }\
+            }
             """ % (self.model_view_location, self.sphere_center_location))
         return vertex_shader
 
@@ -93,7 +95,7 @@ class SphereProgram(object):
             #line 94
             // Geometry shader for sphere imposters
             layout(points) in;
-            layout(triangle_strip, max_vertices=20) out; // viewer-facing half-cube imposter geometry
+            layout(triangle_strip, max_vertices=20) out; // 2 * viewer-facing half-cube imposter geometry
 
             layout(location = %d) uniform mat4 projectionMatrix;
             
@@ -102,10 +104,10 @@ class SphereProgram(object):
             // to help efficiently solve the quadratic ray-casting formula for this sphere.
             out LinearParameters
             {
-                vec3 c; // sphere center - constant
-                vec3 p; // imposter position - linear
-                float c2; // cee squared - constant
-                float pc; // pos dot center - linear
+                vec3 c; // sphere center   (constant)
+                vec3 p; // imposter position   (linear)
+                float c2; // cee squared   (constant)
+                float pc; // pos dot center   (linear)
                 float radius;
             } lp;
             
@@ -247,14 +249,40 @@ class SphereProgram(object):
 
             in LinearParameters
             {
-                vec3 c; // sphere center - constant
-                vec3 p; // imposter position - linear
-                float c2; // cee squared - constant
-                float pc; // pos dot center - linear
+                vec3 c; // sphere center   (constant)
+                vec3 p; // imposter position   (linear)
+                float c2; // cee squared   (constant)
+                float pc; // pos dot center   (linear)
                 float radius;
             } lp;
             
             out vec4 frag_color;
+            
+            vec3 normal_material(vec3 pos, vec3 normal, vec3 surface_color) {
+                // convert normal to world frame
+                mat3 world_from_eye = transpose(mat3(modelviewMatrix));
+                return 0.5 * (world_from_eye * normal + vec3(1));
+            }
+
+            // position and normal are in camera coordinates
+            vec3 point_light(vec3 pos, vec3 normal, vec3 surface_color) {
+                const vec3 ambient_light = vec3(0.2, 0.2, 0.25);
+                const vec3 diffuse_light = vec3(0.6, 0.8, 0.6);
+                const vec3 specular_light = 0.5 * vec3(0.8, 0.8, 0.6);
+                const vec4 light_pos = modelviewMatrix * vec4(-2, 10, -1, 0);  // w==0 means light at inifinity
+                const vec3 surfaceToLight = normalize(light_pos.xyz);
+                float diffuseCoefficient = max(0.0, dot(normal, surfaceToLight));
+                vec3 diffuse = diffuseCoefficient * surface_color * diffuse_light;
+                vec3 ambient = ambient_light * surface_color;
+                vec3 surfaceToCamera = normalize(-pos);  // also a unit vector    
+                // Use Blinn-Phong specular model, to match fixed-function pipeline result (at least on nvidia)
+                vec3 H = normalize(surfaceToLight + surfaceToCamera);
+                float nDotH = max(0.0, dot(normal, H));
+                float specularCoefficient = pow(nDotH, 8);
+                vec3 specular = specularCoefficient * specular_light;
+                return diffuse + specular + ambient;        
+            }
+            
             
             void main() 
             {
@@ -274,25 +302,39 @@ class SphereProgram(object):
                 // compute surface position and normal
                 float left = lp.pc / a2; // left half of quadratic formula: -b/2a
                 float right = sqrt(discriminant) / a2; // (negative) right half of quadratic formula: sqrt(b^2-4ac)/2a
-                float alpha1 = left - right; // near/front surface of sphere
-                vec3 s = alpha1 * lp.p;  // sphere surface in camera coordinates
-                vec3 normal = 1.0 / lp.radius * (s - lp.c);
-                // todo: convert normal to world frame
-                mat3 world_from_eye = transpose(mat3(modelviewMatrix));
-                normal = world_from_eye * normal;
-
-                vec3 normal_color = 0.5 * (normal + vec3(1));
-
-                const vec3 sphere_color = vec3(0, 0.1, 1);
-
-                frag_color = vec4(normal_color, opacity);
+                float alpha = left - right; // near/front surface of sphere
+                vec3 s = alpha * lp.p;  // sphere surface in camera coordinates
                 
+                vec3 normal = 1.0 / lp.radius * (s - lp.c); // in camera coordinates
+                const vec3 sphere_color = vec3(0.4, 0.4, 0.6);
+
                 // Set depth correctly
                 // todo: make this optional
+                const float far = 1.0; // or gl_DepthRange.far
+                const float near = 0.0; // or gl_DepthRange.near
                 vec4 clip = projectionMatrix * vec4(s, 1);
                 float ndc_depth = clip.z / clip.w;
-                gl_FragDepth = 0.5 * (ndc_depth + 1);
-            }\
+                float depth = 0.5 * ((far - near) * ndc_depth + near + far);
+                if (depth < 0) {  // sphere surface is behind near clip plane
+                    // is the rear of the sphere visible?
+                    vec3 back = (left + right) * lp.p;
+                    clip = projectionMatrix * vec4(back, 1);
+                    ndc_depth = clip.z / clip.w;
+                    depth = 0.5 * ((far - near) * ndc_depth + near + far);
+                    if (depth < 0)
+                        discard;
+                    // Solid core clipped sphere
+                    normal = vec3(0, 0, 1);
+                    depth = 0;
+                }
+                gl_FragDepth = depth;
+                
+                frag_color = vec4(
+                        point_light(s, normal, sphere_color),
+                        // normal_material(s, normal, sphere_color),
+                        opacity);
+                
+            }
             """ % (self.model_view_location, self.projection_location))
         return fragment_shader
 
