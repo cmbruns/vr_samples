@@ -241,7 +241,7 @@ class SphereProgram(object):
         fragment_shader = textwrap.dedent(
             """\
             #version 450 core
-            #line 239
+            #line 245
             // Fragment shader for sphere imposters
             
             layout(location = %d) uniform mat4 modelviewMatrix = mat4(1);
@@ -291,7 +291,7 @@ class SphereProgram(object):
                 float discriminant = lp.pc*lp.pc - a2*lp.c2;
                 float dd = fwidth(discriminant);  // antialiasing
                 float opacity = 1.0;
-                if (discriminant < 0) {
+                if (discriminant <= 0) {
                     discard;  // cull missed rays
                 }
                 else if (discriminant < dd) {
@@ -302,8 +302,9 @@ class SphereProgram(object):
                 // compute surface position and normal
                 float left = lp.pc / a2; // left half of quadratic formula: -b/2a
                 float right = sqrt(discriminant) / a2; // (negative) right half of quadratic formula: sqrt(b^2-4ac)/2a
-                float alpha = left - right; // near/front surface of sphere
-                vec3 s = alpha * lp.p;  // sphere surface in camera coordinates
+                float alpha1 = left - right; // near/front surface of sphere
+                float alpha2 = left + right; // far surface of sphere
+                vec3 s = alpha1 * lp.p;  // sphere surface in camera coordinates
                 
                 vec3 normal = 1.0 / lp.radius * (s - lp.c); // in camera coordinates
                 const vec3 sphere_color = vec3(0.4, 0.4, 0.6);
@@ -315,17 +316,24 @@ class SphereProgram(object):
                 vec4 clip = projectionMatrix * vec4(s, 1);
                 float ndc_depth = clip.z / clip.w;
                 float depth = 0.5 * ((far - near) * ndc_depth + near + far);
-                if (depth < 0) {  // sphere surface is behind near clip plane
+                // NOTE: I'm not sure why "depth >= 1" is needed here, but it is needed
+                // to make the solid core effect work all the way through the sphere
+                if (depth <= 0 || depth >= 1) {  // sphere surface is behind near clip plane
                     // is the rear of the sphere visible?
-                    vec3 back = (left + right) * lp.p;
+                    vec3 back = alpha2 * lp.p;
                     clip = projectionMatrix * vec4(back, 1);
                     ndc_depth = clip.z / clip.w;
                     depth = 0.5 * ((far - near) * ndc_depth + near + far);
-                    if (depth < 0)
+                    if (depth <= 0 || depth >= 1)
                         discard;
                     // Solid core clipped sphere
                     normal = vec3(0, 0, 1);
-                    depth = 0;
+                    depth = 1e-9;
+                    // adjust s to intersect near clip plane
+                    vec4 zNear_vec = inverse(projectionMatrix) * vec4(0, 0, 0, 1);
+                    float zNear = zNear_vec.z / zNear_vec.w;
+                    float zd = (s.z - zNear) / (s.z - back.z);
+                    s = mix(s, back, zd);
                 }
                 gl_FragDepth = depth;
                 
@@ -349,7 +357,7 @@ class SphereActor(object):
         self.vao = None
         if vbos is None:
             # Create on vertex buffer object
-            self.vbos = [VBO(numpy.array([0, 1.5, 0], dtype='f')), ]
+            self.vbos = [VBO(numpy.array([0, 1.1, 0], dtype='f')), ]
 
     def init_gl(self):
         self.shader.init_gl()
